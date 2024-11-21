@@ -40,6 +40,7 @@
 using namespace std;
 using namespace srt;
 
+// SRT状态是否输出到标准输出
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;

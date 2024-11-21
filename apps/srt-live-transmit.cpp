@@ -100,7 +100,9 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
+// 中断状态
 srt::sync::atomic<bool> int_state;
+// 超时状态
 srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
@@ -115,6 +117,7 @@ void OnAlarm_Interrupt(int)
     int_state = false; // JIC
     timer_state = true;
 
+    // 永远不会执行
     if ((false))
     {
         throw AlarmExit("Watchdog bites hangup");
@@ -160,9 +163,9 @@ struct LiveTransmitConfig
     // 是否输出完整状态
     bool full_stats = false;
 
-    // 源URT
+    // 源URI
     string source;
-    // 目标URT
+    // 目标URI
     string target;
 };
 
@@ -411,18 +414,26 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size > 0)
         transmit_chunk_size = cfg.chunk_size;
+    // SRT状态统计
     transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
+    // 带宽报告频率
     transmit_bw_report = cfg.bw_report;
+    // 传输状态报告频率
     transmit_stats_report = cfg.stats_report;
+    // 是否输出完整的状态
     transmit_total_stats = cfg.full_stats;
 
     //
     // Set SRT log levels and functional areas
     //
+    // 设置日志等级
     srt_setloglevel(cfg.loglevel);
+    // 设置日志功能域
     if (!cfg.logfas.empty())
     {
+        // 清空日志功能域
         srt_resetlogfa(nullptr, 0);
+        // 添加需要关注的日志功能域
         for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
             srt_addlogfa(*i);
     }
@@ -432,18 +443,28 @@ int main(int argc, char** argv)
     //
     std::ofstream logfile_stream; // leave unused if not set
     char NAME[] = "SRTLIB";
+    // 使用内部日志
     if (cfg.log_internal)
     {
+        cout << "use internal log" << endl;
+
+        // 设置日志标志:不输出时间戳/日志等级/线程名，不自动添加换行符
         srt_setlogflags(0
             | SRT_LOGF_DISABLE_TIME
             | SRT_LOGF_DISABLE_SEVERITY
             | SRT_LOGF_DISABLE_THREADNAME
             | SRT_LOGF_DISABLE_EOL
         );
+
+        // 用户注册自定义的日志处理函数
         srt_setloghandler(NAME, TestLogHandler);
     }
+    // 输出到日志文件
     else if (!cfg.logfile.empty())
     {
+        cout << "logfile path: " << cfg.logfile << endl;
+
+        // 设置日志输出流到文件
         logfile_stream.open(cfg.logfile.c_str());
         if (!logfile_stream)
         {
@@ -460,6 +481,7 @@ int main(int argc, char** argv)
     // SRT stats output
     //
     std::ofstream logfile_stats; // leave unused if not set
+    // SRT状态统计输出到文件
     if (cfg.stats_out != "")
     {
         logfile_stats.open(cfg.stats_out.c_str());
@@ -469,11 +491,14 @@ int main(int argc, char** argv)
             logfile_stats.close();
         }
     }
+    // 带宽报告频率，状态报告频率
     else if (cfg.bw_report != 0 || cfg.stats_report != 0)
     {
+        // 状态输出到标准输出
         g_stats_are_printed_to_stdout = true;
     }
 
+    // 状态输出流: 文件 或 标准输出
     ostream &out_stats = logfile_stats.is_open() ? logfile_stats : cout;
 
 #ifdef _WIN32
@@ -485,18 +510,22 @@ int main(int argc, char** argv)
     }
 
 #else
+    // 超时时间，超时后退出程序
     if (cfg.timeout > 0)
     {
         signal(SIGALRM, OnAlarm_Interrupt);
+        // 非静默输出
         if (!cfg.quiet)
             cerr << "TIMEOUT: will interrupt after " << cfg.timeout << "s\n";
         alarm(cfg.timeout);
     }
 #endif
+    // Ctrl+C 退出程序
     signal(SIGINT, OnINT_ForceExit);
+    // kill 退出程序
     signal(SIGTERM, OnINT_ForceExit);
 
-
+    // 非静默输出
     if (!cfg.quiet)
     {
         cerr << "Media path: '"
@@ -506,11 +535,16 @@ int main(int argc, char** argv)
             << "'\n";
     }
 
+    // 源
     unique_ptr<Source> src;
+    // 源连接状态
     bool srcConnected = false;
+    // 目标
     unique_ptr<Target> tar;
+    // 目标连接状态
     bool tarConnected = false;
 
+    // epoll
     int pollid = srt_epoll_create();
     if (pollid < 0)
     {
@@ -518,6 +552,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // 接收到的字节数
     size_t receivedBytes = 0;
     size_t wroteBytes = 0;
     size_t lostBytes = 0;
@@ -528,17 +563,24 @@ int main(int argc, char** argv)
         // Now loop until broken
         while (!int_state && !timer_state)
         {
+            // 源尚未创建，则创建之
             if (!src.get())
             {
+                // 根据命令行参数创建源
                 src = Source::Create(cfg.source);
                 if (!src.get())
                 {
                     cerr << "Unsupported source type" << endl;
                     return 1;
                 }
+
+                // 关注源的可读和异常事件
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
+                // 不同类型的源，对应不同类型的文件描述符，需要调用不同的epoll_add函数
                 switch (src->uri.type())
                 {
+                // 源是一个SRT流，添加SRTSOCKET
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
                         src->GetSRTSocket(), &events))
@@ -548,6 +590,7 @@ int main(int argc, char** argv)
                         return 1;
                     }
                     break;
+                // 源是一个UDP或RTP流,添加SYSSOCKET
                 case UriParser::UDP:
                 case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
@@ -559,6 +602,7 @@ int main(int argc, char** argv)
                         return 1;
                     }
                     break;
+                // 源是一个文件，普通文件描述符，同样认为是一个SYSSOCKET
                 case UriParser::FILE:
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
@@ -575,8 +619,10 @@ int main(int argc, char** argv)
                 receivedBytes = 0;
             }
 
+            // 目的尚未创建，则创建之
             if (!tar.get())
             {
+                // 根据命令行参数创建目标
                 tar = Target::Create(cfg.target);
                 if (!tar.get())
                 {
@@ -586,9 +632,13 @@ int main(int argc, char** argv)
 
                 // IN because we care for state transitions only
                 // OUT - to check the connection state changes
+                // SRT_EPOLL_IN - 用来监测连接建立/断开等状态变化
+                // SRT_EPOLL_OUT - 
                 int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+                // 目的类型
                 switch(tar->uri.type())
                 {
+                // 目的是一个SRT流，添加SRTSOCKET
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
                         tar->GetSRTSocket(), &events))

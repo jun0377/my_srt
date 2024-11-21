@@ -27,6 +27,7 @@ class UriParser
 public:
 
     enum DefaultExpect { EXPECT_FILE, EXPECT_HOST };
+    // 不同类型的源: 文件/UDP/TCP/SRT/RTMP/HTTP/RTP
     enum Type
     {
         UNKNOWN, FILE, UDP, TCP, SRT, RTMP, HTTP, RTP
@@ -73,7 +74,7 @@ private:
     std::string m_host;
     std::string m_port;
     std::string m_path;
-    Type m_uriType;
+    Type m_uriType;             // 不同类型的源: 文件/UDP/TCP/SRT/RTMP/HTTP/RTP
     DefaultExpect m_expect;
 
     std::map<std::string, std::string> m_mapQuery;

@@ -107,6 +107,7 @@ string UriParser::proto(void) const
     return m_proto;
 }
 
+// 解析源类型: 文件/UDP/TCP/SRT/RTMP/HTTP/RTP
 UriParser::Type UriParser::type() const
 {
     return m_uriType;
