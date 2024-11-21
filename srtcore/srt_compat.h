@@ -42,6 +42,7 @@ inline std::string SysStrError(int errnum)
     return SysStrError(errnum, buf, 1024);
 }
 
+// 将time_t转换为struct tm
 inline struct tm SysLocalTime(time_t tt)
 {
     struct tm tms;

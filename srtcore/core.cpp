@@ -234,6 +234,7 @@ const SrtOptionAction s_sockopt_action;
 
 #if HAVE_CXX11
 
+// 单例模式
 CUDTUnited& srt::CUDT::uglobal()
 {
     static CUDTUnited instance;

@@ -40,9 +40,13 @@ written by
 #define SRT_LOG_LEVEL_MAX LOG_DEBUG
 
 // Flags
+// 日志中是否显示时间
 #define SRT_LOGF_DISABLE_TIME 1
+// 日志中是否显示线程名称
 #define SRT_LOGF_DISABLE_THREADNAME 2
+// 日志中是否显示日志等级
 #define SRT_LOGF_DISABLE_SEVERITY 4
+// 日志中是否自动添加换行符
 #define SRT_LOGF_DISABLE_EOL 8
 
 // Handler type.

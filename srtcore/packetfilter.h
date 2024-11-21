@@ -25,6 +25,7 @@ class CUnitQueue;
 struct CUnit;
 class CUDT;
 
+// 包过滤器
 class PacketFilter
 {
     friend class SrtPacketFilterBase;

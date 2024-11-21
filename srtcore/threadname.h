@@ -67,6 +67,7 @@ written by
 
 namespace srt {
 
+// 设置/获取线程名称
 class ThreadName
 {
 
@@ -76,9 +77,14 @@ class ThreadName
     class ThreadNameImpl
     {
     public:
+        /* 
+            1. 线程名称缓冲区大小，Linux限制了线程名称最大为16byte 
+            2. 这里设置为64是为了预留足够的空间容纳线程id和时间戳
+        */
         static const size_t BUFSIZE    = 64;
         static const bool   DUMMY_IMPL = false;
 
+        // 获取线程名称
         static bool get(char* namebuf)
         {
 #if defined(__linux__)
@@ -92,6 +98,7 @@ class ThreadName
 #endif
         }
 
+        // 设置线程名称
         static bool set(const char* name)
         {
             SRT_ASSERT(name != NULL);
@@ -116,11 +123,14 @@ class ThreadName
         explicit ThreadNameImpl(const std::string& name)
             : reset(false)
         {
+            // 获取线程id
             tid   = pthread_self();
 
+            // 获取旧的线程名称
             if (!get(old_name))
                 return;
 
+            // 设置新得线程名称
             reset = set(name.c_str());
             if (reset)
                 return;
@@ -128,11 +138,14 @@ class ThreadName
             // Try with a shorter name. 15 is the upper limit supported by Linux,
             // other platforms should support a larger value. So 15 should works
             // on all platforms.
+
+            // Linux限制了线程名称不能超过16byte，所以这里截取前15个字符 + '\0'
             const size_t max_len = 15;
             if (name.size() > max_len)
                 reset = set(name.substr(0, max_len).c_str());
         }
 
+        // 析构时恢复旧的线程名称
         ~ThreadNameImpl()
         {
             if (!reset)
@@ -148,8 +161,11 @@ class ThreadName
         ThreadNameImpl& operator=(const ThreadNameImpl& other);
 
     private:
+        // 是否更改过线程名称
         bool      reset;
+        // 线程id
         pthread_t tid;
+        // 旧的线程名称
         char      old_name[BUFSIZE];
     };
 

@@ -235,10 +235,13 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 
 int srt::CUDTUnited::startup()
 {
+    // lock_guard
     ScopedLock gcinit(m_InitLock);
+    // 资源回收线程已创建，立即返回
     if (m_bGCStatus)
         return 1;
 
+    // 避免重复启动
     if (m_iInstanceCount++ > 0)
         return 1;
 
@@ -252,15 +255,20 @@ int srt::CUDTUnited::startup()
         throw CUDTException(MJ_SETUP, MN_NONE, WSAGetLastError());
 #endif
 
+    // 加密控制
     CCryptoControl::globalInit();
 
+    // 包过滤器
     PacketFilter::globalInit();
 
+    // 是否正在关闭
     m_bClosing = false;
 
+    // 创建资源回收线程
     if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
         return -1;
 
+    // 资源回收线程已创建
     m_bGCStatus = true;
 
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);

@@ -533,6 +533,7 @@ private:
     CCache<CInfoBlock>* const m_pCache;
 
 private:
+    // 是否正在关闭
     srt::sync::atomic<bool> m_bClosing;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
@@ -541,6 +542,7 @@ private:
     SRT_ATTR_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
     SRT_ATTR_GUARDED_BY(m_InitLock)
+    // 资源回收线程是否正在工作
     bool        m_bGCStatus;      // if the GC thread is working (true)
 
     SRT_ATTR_GUARDED_BY(m_InitLock)
