@@ -1,3 +1,19 @@
+CMakeCache.txt
+CMakeFiles/
+Makefile
+build/
+cmake_install.cmake
+config-status.sh
+haisrt.pc
+install_manifest.txt
+libsrt.so*
+srt-file-transmit
+srt-live-transmit
+srt-tunnel
+srt.pc
+version.h
+
+
 # Prerequisites
 *.d
 
