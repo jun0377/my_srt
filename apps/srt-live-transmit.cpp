@@ -127,24 +127,42 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 struct LiveTransmitConfig
 {
+    // 超时时间，秒
     int timeout = 0;
+    // 超时时间统计模式，0 - 从应用启动开始计时，1 - 连接成功后重新计时
     int timeout_mode = 0;
+    // 数据块大小
     int chunk_size = -1;
+    // 静默模式，不输出日志
     bool quiet = false;
+    // 日志等级，默认error
     srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
+    // 支持功能域
     set<srt_logging::LogFA> logfas;
+    // 是否使用内部日志
     bool log_internal;
+    // 日志文件路径
     string logfile;
+    // 带宽报告频率
     int bw_report = 0;
+    // 是否使用源时间戳
     bool srctime = false;
+    // 缓冲区大小，单位：包
     size_t buffering = 10;
+    // 状态报告频率
     int stats_report = 0;
+    // 状态输出文件路径
     string stats_out;
+    // 状态打印格式，两列/JSON/CSV
     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
+    // 是否自动重连
     bool auto_reconnect = true;
+    // 是否输出完整状态
     bool full_stats = false;
 
+    // 源URT
     string source;
+    // 目标URT
     string target;
 };
 
@@ -360,25 +378,30 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
 int main(int argc, char** argv)
 {
+    // srt初始化
     srt_startup();
+
     // This is mainly required on Windows to initialize the network system,
     // for a case when the instance would use UDP. SRT does it on its own, independently.
+    // windows下的网络初始化
     if (!SysInitializeNetwork())
         throw std::runtime_error("Can't initialize network!");
 
     // Symmetrically, this does a cleanup; put into a local destructor to ensure that
     // it's called regardless of how this function returns.
+    // RAII，当cleanupobj离开作用域时，会自动调用析构，无论函数是正常返回还是异常退出
     struct NetworkCleanup
     {
         ~NetworkCleanup()
         {
             srt_cleanup();
-            SysCleanupNetwork();
+            SysCleanupNetwork();    // windows下的网络清理
         }
     } cleanupobj;
 
-
+    // 直播相关参数
     LiveTransmitConfig cfg;
+    // 解析命令行参数
     const int parse_ret = parse_args(cfg, argc, argv);
     if (parse_ret != 0)
         return parse_ret == 1 ? EXIT_FAILURE : 0;

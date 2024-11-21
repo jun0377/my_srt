@@ -44,6 +44,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
+// 传输时的数据块大小
 unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
 
 class FileSource: public Source

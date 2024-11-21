@@ -233,6 +233,11 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     return os.str();
 }
 
+/*
+    1. 初始化加密模块
+    2. 初始化包过滤器
+    3. 创建资源回收线程
+*/
 int srt::CUDTUnited::startup()
 {
     // lock_guard

@@ -36,6 +36,7 @@ inline SrtStatData* make_stat(SrtStatCat cat, const string& name, const string& 
 
 vector<unique_ptr<SrtStatData>> g_SrtStatsTable;
 
+// 统计表，记录了需要统计的参数
 struct SrtStatsTableInit
 {
     SrtStatsTableInit(vector<unique_ptr<SrtStatData>>& s)
@@ -88,6 +89,7 @@ struct SrtStatsTableInit
 #undef STAT
 #undef STATX
 
+// 状态信息分类，enum SrtStatCat枚举类型中五种分类对应的字符串
 string srt_json_cat_names [] = {
     "",
     "window",
@@ -98,6 +100,7 @@ string srt_json_cat_names [] = {
 
 #ifdef HAVE_CXX_STD_PUT_TIME
 // Follows ISO 8601
+// 输出时间戳
 std::string SrtStatsWriter::print_timestamp()
 {
     using namespace std;
@@ -109,11 +112,17 @@ std::string SrtStatsWriter::print_timestamp()
     std::ostringstream output;
 
     // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
+    // 失败时返回一个全是0的tm_now结构体
     const tm tm_now = SysLocalTime(time_now);
+    // 格式化日期和时间
     output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
+    // 获取自纪元以来的时间
     const auto    since_epoch = systime_now.time_since_epoch();
+    // 纪元时间转换成秒
     const seconds s           = duration_cast<seconds>(since_epoch);
+    // 时间的微秒部分
     output << duration_cast<microseconds>(since_epoch - s).count();
+    // 输出时区
     output << std::put_time(&tm_now, "%z");
     return output.str();
 }
@@ -126,9 +135,10 @@ string SrtStatsWriter::print_timestamp()
 { return "<NOT IMPLEMENTED>"; }
 #endif // HAVE_CXX_STD_PUT_TIME
 
-
+// 抽象工厂模式的具体实现类 - JSON格式的状态信息
 class SrtStatsJson : public SrtStatsWriter
 {
+    // 给键名添加引号和冒号
     static string quotekey(const string& name)
     {
         if (name == "")
@@ -137,6 +147,7 @@ class SrtStatsJson : public SrtStatsWriter
         return R"(")" + name + R"(":)";
     }
 
+    // 给值增加引号
     static string quote(const string& name)
     {
         if (name == "")
@@ -146,33 +157,42 @@ class SrtStatsJson : public SrtStatsWriter
     }
 
 public: 
+    // 重写基类中的状态记录函数，写入JSON格式的状态信息
     string WriteStats(int sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
 
         string pretty_cr, pretty_tab;
+
+        // 如果设置了pretty美化选项，则使用换行和缩进来格式化输出
         if (Option("pretty"))
         {
             pretty_cr = "\n";
             pretty_tab = "\t";
         }
 
+        // 初始化状态信息分类为通用类
         SrtStatCat cat = SSC_GEN;
 
         // Do general manually
+        // 开始一个JSON对象
         output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr;
 
         // SID is displayed manually
+        // 向JSON对象中添加sid，SocketID
         output << pretty_tab << quotekey("sid") << sid;
 
         // Extra Timepoint is also displayed manually
 #ifdef HAVE_CXX_STD_PUT_TIME
         // NOTE: still assumed SSC_GEN category
+
+        // 向JSON对象中添加时间戳
         output << "," << pretty_cr << pretty_tab
             << quotekey("timepoint") << quote(print_timestamp());
 #endif
 
         // Now continue with fields as specified in the table
+        // 遍历统计表中需要记录的统计参数,添加到JSON对象中
         for (auto& i: g_SrtStatsTable)
         {
             if (i->category == cat)
@@ -208,6 +228,7 @@ public:
         }
 
         // Close the previous subcategory
+        // 关闭上一个状态信息分类
         if (cat != SSC_GEN)
         {
             output << pretty_cr << pretty_tab << "}" << pretty_cr;
@@ -219,6 +240,7 @@ public:
         return output.str();
     }
 
+    // 重写基类中的带宽记录函数，写入JSON格式的带宽信息
     string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
@@ -313,14 +335,18 @@ public:
     }
 };
 
+// 工厂函数，用于创建不同格式的统计信息写入器;比如 JSON/CSV/2列 这三种格式
 shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat)
 {
     switch (printformat)
     {
+    // JSON格式
     case SRTSTATS_PROFMAT_JSON:
         return make_shared<SrtStatsJson>();
+    // CSV格式
     case SRTSTATS_PROFMAT_CSV:
         return make_shared<SrtStatsCsv>();
+    // 两列格式
     case SRTSTATS_PROFMAT_2COLS:
         return make_shared<SrtStatsCols>();
     default:
