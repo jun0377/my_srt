@@ -563,7 +563,9 @@ int main(int argc, char** argv)
         // Now loop until broken
         while (!int_state && !timer_state)
         {
-            // 源尚未创建，则创建之
+            /*
+                首次执行时，根据命令行参数创建源
+            */
             if (!src.get())
             {
                 // 根据命令行参数创建源
@@ -619,7 +621,9 @@ int main(int argc, char** argv)
                 receivedBytes = 0;
             }
 
-            // 目的尚未创建，则创建之
+            /*
+                首次执行时，根据命令行参数创建目标
+            */
             if (!tar.get())
             {
                 // 根据命令行参数创建目标
@@ -630,10 +634,18 @@ int main(int argc, char** argv)
                     return 1;
                 }
 
+                /*
+                    为什么只需要在连接阶段关注写事件？
+                        - 因为连接阶段，需要判断是否套接字可写，从而发送连接请求，建立连接
+                        - 流媒体传输通常是持续的数据流，写操作不会阻塞
+                        - 顶多因为发送缓冲区不足写失败，但此时也不会导致阻塞，因此连接建立成功后就不必关注写事件了
+                        - epoll不关注写事件，可以降低系统开销，提高性能
+                */
+
                 // IN because we care for state transitions only
                 // OUT - to check the connection state changes
                 // SRT_EPOLL_IN - 用来监测连接建立/断开等状态变化
-                // SRT_EPOLL_OUT - 
+                // SRT_EPOLL_OUT - 仅在连接阶段关注写事件，一旦连接建立成功，就不再需要监听写事件
                 int events = SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR;
                 // 目的类型
                 switch(tar->uri.type())
@@ -657,24 +669,33 @@ int main(int argc, char** argv)
                 lastReportedtLostBytes = 0;
             }
 
+            // 两个用于读的SRTSOCKET
             int srtrfdslen = 2;
+            // 两个用于写的SRTSOCKET
             int srtwfdslen = 2;
+            // 4个SRTSOCKET，前两个存储可读的SRTSOCKET,后两个存储可写的SRTSOCKET
             SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
+            // 两个用于读的系统套接字SYSSOCKET
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
+            // epoll_wait等待事件
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
                 &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
             {
+                // 退出标志位
                 bool doabort = false;
+                // 检查是否有SRTSOCKET可读
                 for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
                 {
+                    // 获取可读的SRTSOCKET
                     SRTSOCKET s = srtrwfds[i];
                     if (s == SRT_INVALID_SOCK)
                         continue;
 
                     // Remove duplicated sockets
+                    // 同一个SRTSOCKET可能同时触发读和写事件，
                     for (size_t j = i + 1; j < sizeof(srtrwfds) / sizeof(SRTSOCKET); j++)
                     {
                         const SRTSOCKET next_s = srtrwfds[j];
