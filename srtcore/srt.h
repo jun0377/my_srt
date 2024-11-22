@@ -150,6 +150,7 @@ typedef SYSSOCKET UDPSOCKET;
 
 
 // Values returned by srt_getsockstate()
+// SRTSOCKET状态
 typedef enum SRT_SOCKSTATUS {
    SRTS_INIT = 1,
    SRTS_OPENED,
@@ -518,6 +519,8 @@ typedef enum SRT_ERRNO
 
     SRT_EASYNCFAIL      = SRT_EMJ(AGAIN),
     SRT_EASYNCSND       = SRT_EMN(AGAIN, WRAVAIL),
+
+    // 非阻塞模式下，读数据失败，如接受缓冲区已满的情况
     SRT_EASYNCRCV       = SRT_EMN(AGAIN, RDAVAIL),
     SRT_ETIMEOUT        = SRT_EMN(AGAIN, XMTIMEOUT),
     SRT_ECONGEST        = SRT_EMN(AGAIN, CONGESTION),

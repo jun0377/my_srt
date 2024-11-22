@@ -130,9 +130,9 @@ extern "C" void TestLogHandler(void* opaque, int level, const char* file, int li
 
 struct LiveTransmitConfig
 {
-    // 超时时间，秒
+    // 建立连接超时时间，秒; 
     int timeout = 0;
-    // 超时时间统计模式，0 - 从应用启动开始计时，1 - 连接成功后重新计时
+    // 超时时间统计模式，0 - 从应用启动开始计时，1 - 建立连接时开始计时
     int timeout_mode = 0;
     // 数据块大小
     int chunk_size = -1;
@@ -695,7 +695,8 @@ int main(int argc, char** argv)
                         continue;
 
                     // Remove duplicated sockets
-                    // 同一个SRTSOCKET可能同时触发读和写事件，
+                    // 同一个SRTSOCKET可能同时触发读和写事件
+                    // 连接建立成功后，就不再需要关注写事件了，直接将可写SRTSOCKET设置为无效
                     for (size_t j = i + 1; j < sizeof(srtrwfds) / sizeof(SRTSOCKET); j++)
                     {
                         const SRTSOCKET next_s = srtrwfds[j];
@@ -703,6 +704,7 @@ int main(int argc, char** argv)
                             srtrwfds[j] = SRT_INVALID_SOCK;
                     }
 
+                    // 判断SRTSOCKET对应的是源还是目的
                     bool issource = false;
                     if (src && src->GetSRTSocket() == s)
                     {
@@ -715,11 +717,14 @@ int main(int argc, char** argv)
 
                     const char * dirstring = (issource) ? "source" : "target";
 
+                    // SRTSOCKET状态
                     SRT_SOCKSTATUS status = srt_getsockstate(s);
                     switch (status)
                     {
+                    // 监听状态
                     case SRTS_LISTENING:
                     {
+                        // 接受新的连接
                         const bool res = (issource) ?
                             src->AcceptNewClient() : tar->AcceptNewClient();
                         if (!res)
@@ -730,8 +735,11 @@ int main(int argc, char** argv)
                             break;
                         }
 
+                        // 从epoll中移除监听的SRTSOCKET
+                        // SRT直播传输通常都是一对一连接，连接建立成功后，就不再需要监听新的连接请求了
                         srt_epoll_remove_usock(pollid, s);
 
+                        // 将新的SRTSOCKET添加到epoll中，不必关注写事件，只关注读个异常事件
                         SRTSOCKET ns = (issource) ?
                             src->GetSRTSocket() : tar->GetSRTSocket();
                         int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
@@ -751,6 +759,8 @@ int main(int argc, char** argv)
                                     << endl;
                             }
 #ifndef _WIN32
+                            // 超时时间统计，1 表示连接建立时开始计时
+                            // 此时连接已经建立成功了，所以取消超时时间
                             if (cfg.timeout_mode == 1 && cfg.timeout > 0)
                             {
                                 if (!cfg.quiet)
@@ -758,6 +768,7 @@ int main(int argc, char** argv)
                                 alarm(0);
                             }
 #endif
+                            // 连接成功标志位
                             if (issource)
                                 srcConnected = true;
                             else
@@ -769,6 +780,11 @@ int main(int argc, char** argv)
                     case SRTS_NONEXIST:
                     case SRTS_CLOSED:
                     {
+                        /*
+                            SRT连接断开的情况:
+                                - 如果设置了自动重连，则尝试重连，否则立即退出
+                        */
+
                         if (issource)
                         {
                             if (srcConnected)
@@ -788,10 +804,12 @@ int main(int argc, char** argv)
                             tarConnected = false;
                         }
 
+                        // 不需要自动重连，则立即退出
                         if(!cfg.auto_reconnect)
                         {
                             doabort = true;
                         }
+                        // 自动重连
                         else
                         {
                             // force re-connection
@@ -802,6 +820,7 @@ int main(int argc, char** argv)
                                 tar.reset();
 
 #ifndef _WIN32
+                            // 重启超时计时器
                             if (cfg.timeout_mode == 1 && cfg.timeout > 0)
                             {
                                 if (!cfg.quiet)
@@ -812,8 +831,16 @@ int main(int argc, char** argv)
                         }
                     }
                     break;
+                    // SRT连接建立成功
                     case SRTS_CONNECTED:
                     {
+                        /*
+                            SRT连接建立成功:
+                                - 源连接成功，置标志位
+                                - 目的连接成功，
+                        */
+
+                        // 源连接成功,置标志位
                         if (issource)
                         {
                             if (!srcConnected)
@@ -823,11 +850,15 @@ int main(int argc, char** argv)
                                 srcConnected = true;
                             }
                         }
-                        else if (!tarConnected)
+                        // 目的连接成功,置标志位
+                        else if (!tarConnected)  // !tarConnected 用来避免和目标重复连接
                         {
                             if (!cfg.quiet)
                                 cerr << "SRT target connected" << endl;
+
                             tarConnected = true;
+                            
+                            // 目的类型是SRT流,连接建立成功，更新epoll监听的事件：读/异常事件
                             if (tar->uri.type() == UriParser::SRT)
                             {
                                 const int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
@@ -842,6 +873,7 @@ int main(int argc, char** argv)
                             }
 
 #ifndef _WIN32
+                            // 连接建立成功了，取消超时计时器
                             if (cfg.timeout_mode == 1 && cfg.timeout > 0)
                             {
                                 if (!cfg.quiet)
@@ -860,6 +892,7 @@ int main(int argc, char** argv)
                     }
                 }
 
+                // 退出程序
                 if (doabort)
                 {
                     break;
@@ -869,16 +902,32 @@ int main(int argc, char** argv)
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
+
+                // 直播模式下，每次读事件中的处理中，尽可能多地读取缓冲区
+                // 注意：这种模式不适用于缓存/文件传输模式
+
+                // 缓存媒体数据包地队列
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
+
+                /*
+                    从源读取媒体数据包
+                */
+
+                // 源已创建，且已打开，且有可读的SRTSOCKET或系统套接字SYSSOCKET
                 if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
+                    // 
                     while (dataqueue.size() < cfg.buffering)
                     {
+                        // 创建一个媒体数据包
                         std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
+                        // 从源读取指定大小地数据，保存到pkt
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
+                        // SRT源读取失败
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
+                            // 非阻塞模式下，读数据失败；如接收缓冲区已满
                             if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                                 break;
 
@@ -887,36 +936,52 @@ int main(int argc, char** argv)
                             );
                         }
 
+                        // 读到空包的情况
                         if (res == 0 || pkt->payload.empty())
                         {
                             break;
                         }
 
+                        // 将媒体数据包添加到队列
                         dataqueue.push_back(pkt);
+                        // 统计接收到的字节数
                         receivedBytes += pkt->payload.size();
                     }
                 }
 
                 // if there is no target, let the received data be lost
+                // 没有目的时，丢弃接收到的数据
+
+                /*
+                    向目的发送媒体数据包
+                        - 目的未创建或未打开，统计丢弃的字节数
+                        - 向目的写数据失败，统计丢弃的数据包
+                        - 正常向目的写数据
+                */
                 while (!dataqueue.empty())
                 {
                     std::shared_ptr<MediaPacket> pkt = dataqueue.front();
+                    // 目的未创建或未打开，统计丢弃的字节数
                     if (!tar.get() || !tar->IsOpen())
                     {
                         lostBytes += pkt->payload.size();
                     }
+                    // 目的已创建，且已打开，但是向目的写数据失败
                     else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
                     {
                         lostBytes += pkt->payload.size();
                     }
+                    // 正常向目的写数据
                     else
                     {
                         wroteBytes += pkt->payload.size();
                     }
 
+                    // 从队列中移除已发送或已丢弃的媒体数据包
                     dataqueue.pop_front();
                 }
 
+                // 统计日志
                 if (!cfg.quiet && (lastReportedtLostBytes != lostBytes))
                 {
                     std::time_t now(std::time(nullptr));
