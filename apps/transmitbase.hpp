@@ -47,20 +47,29 @@ extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 class Location
 {
 public:
+    // URI解析器
     UriParser uri;
     Location() {}
 };
 
+// 抽象类
 class Source: public Location
 {
 public:
+    // 读取指定大小的数据到pkt中
     virtual int  Read(size_t chunk, MediaPacket& pkt, std::ostream &out_stats = std::cout) = 0;
+    // 源是否已经打开
     virtual bool IsOpen() = 0;
+    // 源是否已经读取完毕
     virtual bool End() = 0;
+    // 根据URI创建源
     static std::unique_ptr<Source> Create(const std::string& url);
+    // 关闭源
     virtual void Close() {}
+    // 虚析构
     virtual ~Source() {}
 
+    // 自定义异常类，处理读到末尾的情况
     class ReadEOF: public std::runtime_error
     {
     public:
@@ -69,8 +78,11 @@ public:
         }
     };
 
+    // 获取源对应的SRTSOCKET
     virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; }
+    // 获取源对应的SYSSOCKET
     virtual int GetSysSocket() const { return -1; }
+    // 是否接受新的连接
     virtual bool AcceptNewClient() { return false; }
 };
 
