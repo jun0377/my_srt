@@ -146,13 +146,13 @@ struct LiveTransmitConfig
     bool log_internal;
     // 日志文件路径
     string logfile;
-    // 带宽报告频率
+    // 带宽报告频率,每多少个包报告一次
     int bw_report = 0;
     // 是否使用源时间戳
     bool srctime = false;
     // 缓冲区大小，单位：包
     size_t buffering = 10;
-    // 状态报告频率
+    // 状态报告频率,每多少个包报告一次
     int stats_report = 0;
     // 状态输出文件路径
     string stats_out;
@@ -416,12 +416,15 @@ int main(int argc, char** argv)
         transmit_chunk_size = cfg.chunk_size;
     // SRT状态统计
     transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
-    // 带宽报告频率
+    // 带宽报告频率,每多少个包报告一次
     transmit_bw_report = cfg.bw_report;
-    // 传输状态报告频率
+    cout << "transmit_bw_report: " << transmit_bw_report << endl;
+    // 传输状态报告频率,每多少个包报告一次
     transmit_stats_report = cfg.stats_report;
-    // 是否输出完整的状态
+    cout << "transmit_stats_report: " << transmit_stats_report << endl;
+    // 是否输出完整的状态日志
     transmit_total_stats = cfg.full_stats;
+    cout << "transmit_total_stats: " << (transmit_total_stats ? "true" : "false") << endl;
 
     //
     // Set SRT log levels and functional areas
@@ -556,7 +559,9 @@ int main(int argc, char** argv)
     size_t receivedBytes = 0;
     size_t wroteBytes = 0;
     size_t lostBytes = 0;
+    // 丢包统计
     size_t lastReportedtLostBytes = 0;
+    // 发生错误时的时间戳
     std::time_t writeErrorLogTimer(std::time(nullptr));
 
     try {
@@ -987,6 +992,11 @@ int main(int argc, char** argv)
                     std::time_t now(std::time(nullptr));
                     if (std::difftime(now, writeErrorLogTimer) >= 5.0)
                     {
+                        /*
+                            eg:
+                            2373688 bytes lost, 140812 bytes sent, 2514500 bytes received
+                        */
+                
                         cerr << lostBytes << " bytes lost, "
                             << wroteBytes << " bytes sent, "
                             << receivedBytes << " bytes received"
