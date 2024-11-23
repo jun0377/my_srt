@@ -111,9 +111,12 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 
 shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
+// 初始化SRT通用参数: 连接模式/网络适配器/超时时间/出战端口...
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
+
+    // 如果开启了详细日志输出，则输出SRT参数
     if (Verbose::on && !par.empty())
     {
         Verb() << "SRT parameters specified:\n";
@@ -123,8 +126,13 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         }
     }
 
+    // 解析URI中的bind参数,获取网络适配器配置
     if (par.count("bind"))
     {
+        /*
+            URI中包含bind参数，说明是一个网络流
+                - 按网络地址类型的URI进行解析
+        */
         string bindspec = par.at("bind");
         UriParser u (bindspec, UriParser::EXPECT_HOST);
         if ( u.scheme() != ""
@@ -135,23 +143,29 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
             Error("Invalid syntax in 'bind' option");
         }
 
+        // 获取网络适配器参数
         if (u.host() != "")
             par["adapter"] = u.host();
+        // 获取端口号
         par["port"] = u.port();
+        // 删除bind参数
         par.erase("bind");
     }
 
+    // 网络适配器
     string adapter;
     if (par.count("adapter"))
     {
         adapter = par.at("adapter");
     }
 
+    // 连接模式: Listener/Caller/Rendezvous
     m_mode = "default";
     if (par.count("mode"))
     {
         m_mode = par.at("mode");
     }
+    // 确定SRT连接模式: Listener/Caller/Rendezvous
     SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
     if (mode == SocketOption::FAILURE)
     {
@@ -159,16 +173,19 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     }
 
     // Fix the mode name after successful interpretation
+    // 修正连接模式
     m_mode = SocketOption::mode_names[mode];
 
     par.erase("mode");
 
+    // 发送/接收超时
     if (par.count("timeout"))
     {
         m_timeout = stoi(par.at("timeout"), 0, 0);
         par.erase("timeout");
     }
 
+    // 网络适配器
     if (par.count("adapter"))
     {
         m_adapter = par.at("adapter");
@@ -181,11 +198,17 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
+    // 是否使用基于时间戳的数据包传递模式，默认开启; 使用如下方式可以设置为关闭: 
+    // srt://host:port?tsbpd=false
+    // srt://host:port?tsbpd=off
+    // srt://host:port?tsbpd=on
+    // srt://host:port?tsbpd=0
     if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
     }
 
+    // 出站端口
     if (par.count("port"))
     {
         m_outgoing_port = stoi(par.at("port"), 0, 0);
@@ -696,11 +719,14 @@ void SrtModel::Establish(std::string& w_name)
     }
 }
 
-
+// 定义一个模板结构体struct Srt
 template <class Iface> struct Srt;
+// 模板特化 - 将struct Srt特化为Source类型, 结构体中定义的type类型为SrtSource
 template <> struct Srt<Source> { typedef SrtSource type; };
+// 模板特化 - 将struct Srt特化为Target类型, 结构体中定义的type类型为SrtTarget
 template <> struct Srt<Target> { typedef SrtTarget type; };
 
+// 创建一个SRT流对象
 template <class Iface>
 Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { return new typename Srt<Iface>::type (host, port, par); }
 
@@ -1159,19 +1185,28 @@ inline bool IsOutput() { return false; }
 template<>
 inline bool IsOutput<Target>() { return true; }
 
+/*
+    模板函数
+        - 根据URI创建源或目标媒介
+        - 这里这个extern不是必须的，为什么要加extern呢?
+*/
 template <class Base>
 extern unique_ptr<Base> CreateMedium(const string& uri)
 {
     unique_ptr<Base> ptr;
 
+    // 解析URI
     UriParser u(uri);
 
     int iport = 0;
+    // 不同的URI类型，创建不同的媒介
     switch ( u.type() )
     {
     default:
         break; // do nothing, return nullptr
+    // 文件类型的URI
     case UriParser::FILE:
+        // URT指向控制台
         if (u.host() == "con" || u.host() == "console")
         {
             if (IsOutput<Base>() && (
@@ -1191,13 +1226,17 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 #endif
         break;
 
+    // URI是一个SRT类型
     case UriParser::SRT:
+        // 获取URI中的端口号
         iport = atoi(u.port().c_str());
+        // 端口号必须大于等于1024,1024以下的是知名端口号，最好不要使用
         if ( iport < 1024 )
         {
             cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
+        // 
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
         break;
 
@@ -1234,12 +1273,13 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     return ptr;
 }
 
-
+// 工厂方法-创建源媒体对象
 std::unique_ptr<Source> Source::Create(const std::string& url)
 {
     return CreateMedium<Source>(url);
 }
 
+// 工厂方法-创建目标媒体对象
 std::unique_ptr<Target> Target::Create(const std::string& url)
 {
     return CreateMedium<Target>(url);

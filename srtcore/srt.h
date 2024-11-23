@@ -174,6 +174,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_FC = 4,              // Flight flag size (window size)
    SRTO_SNDBUF = 5,          // maximum buffer in sending queue
    SRTO_RCVBUF = 6,          // UDT receiving buffer size
+   // 关闭时等待未发送的数据，即如果关闭时仍有数据尚未发送，等待
    SRTO_LINGER = 7,          // waiting for unsent data when closing
    SRTO_UDP_SNDBUF = 8,      // UDP sending buffer size
    SRTO_UDP_RCVBUF = 9,      // UDP receiving buffer size

@@ -113,11 +113,13 @@ UriParser::Type UriParser::type() const
     return m_uriType;
 }
 
+// 获取URI中的主机
 string UriParser::host(void) const
 {
     return m_host;
 }
 
+// 获取URI中的端口号
 string UriParser::port(void) const
 {
     return m_port;

@@ -96,6 +96,7 @@ protected:
 
     int srt_epoll = -1;
     SRT_EPOLL_T m_direction = SRT_EPOLL_OPT_NONE; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
+   // 是否使用同步发送/接收,即阻塞模式，默认开启
     bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_direction
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_direction
     bool m_tsbpdmode = true;
@@ -124,13 +125,17 @@ protected:
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
     bool m_listener_group = false;
+    // 判断SRTSOCKET是否可用
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
+    // 判断SRT连接是否异常
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
-
+    // 更新套接字组状态
     void UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size);
 
 public:
+    // 初始化参数
     void InitParameters(std::string host, std::string path, std::map<std::string,std::string> par);
+    // 设置为listener
     void PrepareListener(std::string host, int port, int backlog);
     void StealFrom(SrtCommon& src);
     void AcceptNewClient();

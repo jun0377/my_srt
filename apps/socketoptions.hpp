@@ -39,8 +39,10 @@ extern const std::set<std::string> false_names, true_names;
 struct SocketOption
 {
     enum Type { STRING = 0, INT, INT64, BOOL, ENUM };
+    // 连接前需要设置的参数还是连接后需要设置的参数
     enum Binding { PRE = 0, POST };
     enum Domain { SYSTEM, SRT };
+    // 连接模式：监听模式/连接模式/交会连接模式
     enum Mode {FAILURE = -1, LISTENER = 0, CALLER = 1, RENDEZVOUS = 2};
     static const char* const mode_names [3];
 

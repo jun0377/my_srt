@@ -13,8 +13,9 @@
 
 using namespace std;
 
-
+// 可以表示true的一系列字符串集合
 extern const set<string> true_names = { "1", "yes", "on", "true" };
+// 可以表示为false的一系列字符串集合
 extern const set<string> false_names = { "0", "no", "off", "false" };
 
 extern const std::map<std::string, int> enummap_transtype = {
@@ -27,6 +28,7 @@ const char* const SocketOption::mode_names[3] = {
     "listener", "caller", "rendezvous"
 };
 
+// 确定SRT连接模式: Listener/Caller/Rendezvous
 SocketOption::Mode SrtInterpretMode(const string& modestr, const string& host, const string& adapter)
 {
     SocketOption::Mode mode = SocketOption::FAILURE;
@@ -48,6 +50,17 @@ SocketOption::Mode SrtInterpretMode(const string& modestr, const string& host, c
         // Use the following convention:
         // 1. Server for source, Client for target
         // 2. If host is empty, then always server.
+
+        /*
+            1. URI中未指定host，则说明是作为服务器，如 srt://:9000;
+                1.1 这里有一个疑问：如果是 srt://0.0.0.0:9000或srt://127.0.0.1:9000呢？难道此时就不是LISTENER模式了？
+                1.2 哦！原来在https://github.com/Haivision/srt/blob/master/docs/apps/srt-live-transmit.md
+                    这个文档中明确规定了:在这种情况下，必须使用mode参数明确指定连接模式
+            2. 如果URI中指定了host，则说明是作为客户端，此时需要检查适配器
+                2.1 URI中未指定网络适配器，说明是普通连接，如 srt://101.230.251.172:9000
+                2.2 URI中指定了网络适配器，说明是交会连接模式，如 srt://peer:9000?adapter=192.168.1.10
+        */
+
         if ( host == "" )
             mode = SocketOption::LISTENER;
         //else if ( !dir_output )
@@ -69,6 +82,13 @@ SocketOption::Mode SrtInterpretMode(const string& modestr, const string& host, c
     return mode;
 }
 
+/*
+    SRT连接前的配置:
+        1. 连接模式
+        2. 网络适配器设置
+        3. 延迟关闭设置
+        4. 检查需要设置的参数是否都已经设置成功了
+*/
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, string> options, vector<string>* failures)
 {
     vector<string> dummy;
@@ -76,31 +96,38 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
 
     string modestr = "default", adapter;
 
+    // 连接模式: listener/caller/rendezvous
     if (options.count("mode"))
     {
         modestr = options["mode"];
     }
 
+    // 网络适配器
     if (options.count("adapter"))
     {
         adapter = options["adapter"];
     }
 
+    // 修正连接模式
     SocketOption::Mode mode = SrtInterpretMode(modestr, host, adapter);
     if (mode == SocketOption::FAILURE)
     {
         fails.push_back("mode");
     }
 
+    // 延时关闭时间- 关闭时等待未发送的数据，即如果关闭时仍有数据尚未发送，等待一段时间
     if (options.count("linger"))
     {
         linger lin;
+        // 延时时间
         lin.l_linger = stoi(options["linger"]);
+        // 开启/关闭
         lin.l_onoff  = lin.l_linger > 0 ? 1 : 0;
         srt_setsockopt(socket, SocketOption::PRE, SRTO_LINGER, &lin, sizeof(linger));
     }
 
 
+    // 检查需要设置的参数是否都已经设置成功了
     bool all_clear = true;
     for (const auto &o: srt_options)
     {

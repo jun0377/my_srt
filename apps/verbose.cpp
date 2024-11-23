@@ -13,6 +13,7 @@
 
 namespace Verbose
 {
+    // 是否开启详细日志
     bool on = false;
     std::ostream* cverb = &std::cerr;
     srt::sync::Mutex vlock;

@@ -52,7 +52,7 @@ public:
     Location() {}
 };
 
-// 抽象类
+// 源 - 抽象类，可以表示各种源类型，如文件/UDP/TCP/SRT/RTMP/HTTP/RTP...
 class Source: public Location
 {
 public:
@@ -86,19 +86,30 @@ public:
     virtual bool AcceptNewClient() { return false; }
 };
 
+// 目标 - 抽象类
 class Target: public Location
 {
 public:
+    // 向目的写入指定大小的数据
     virtual int  Write(const char* data, size_t size, int64_t src_time, std::ostream &out_stats = std::cout) = 0;
+    // 目标是否已经被打开
     virtual bool IsOpen() = 0;
+    // 与目标的连接是否异常
     virtual bool Broken() = 0;
+    // 关闭目标
     virtual void Close() {}
+    // 尚未写入目标的数据量
     virtual size_t Still() { return 0; }
+    // 根据URI创建目标
     static std::unique_ptr<Target> Create(const std::string& url);
+    // 虚析构
     virtual ~Target() {}
 
+    // 获取目标对应的SRTSOCKET
     virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; }
+    // 获取目标对应的SYSSOCKET
     virtual int GetSysSocket() const { return -1; }
+    // 是否接受新的连接
     virtual bool AcceptNewClient() { return false; }
 };
 

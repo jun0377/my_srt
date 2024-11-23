@@ -485,23 +485,34 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
     m_options["mode"] = m_mode;
 }
 
+// 准备监听
 void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
+    // 创建SRTSOCKET
     m_bindsock = srt_create_socket();
     if (m_bindsock == SRT_ERROR)
         Error("srt_create_socket");
 
+    // SRT连接前需要设置的参数: 连接模式/网络适配器/延迟关闭设置...
     int stat = ConfigurePre(m_bindsock);
     if (stat == SRT_ERROR)
         Error("ConfigurePre");
 
+    /*
+        异步发送/接收模式下需要关注SRT_EPOLL_OUT写事件
+            - 非阻塞模式下，connect函数会立即返回，需要通过SRT_EPOLL_OUT事件来判断连接是否成功
+            - 非阻塞模式下，发送缓冲区满时，send函数会返回错误，需要等待SRT_EPOLL_OUT事件来决定何时可以继续发送
+    */
     if (!m_blocking_mode)
     {
         srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
     }
 
+    // 创建IPv4/IPv6地址
     auto sa = CreateAddr(host, port);
     Verb() << "Binding a server on " << host << ":" << port << " ...";
+
+    // bind
     stat = srt_bind(m_bindsock, sa.get(), sizeof sa);
     if (stat == SRT_ERROR)
     {
@@ -510,6 +521,8 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     }
 
     Verb() << " listen... " << VerbNoEOL;
+
+    // listen
     stat = srt_listen(m_bindsock, backlog);
     if (stat == SRT_ERROR)
     {
@@ -836,11 +849,18 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     return 0;
 }
 
+/* 
+    连接前置操作
+        - 是否使用基于时间戳的数据包传递模式，默认开启
+        - 是否使用同步接收模式，即阻塞接收，默认开启
+        - 检查需要设置的参数是否都已经设置成功了
+*/
 int SrtCommon::ConfigurePre(SRTSOCKET sock)
 {
     int result = 0;
 
     int no = 0;
+    // 是否使用基于时间戳的数据包传递模式，默认开启
     if (!m_tsbpdmode)
     {
         result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
@@ -850,6 +870,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
 
     // Let's pretend async mode is set this way.
     // This is for asynchronous connect.
+    // 是否使用同步接收模式，即阻塞接收
     int maybe = m_blocking_mode;
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &maybe, sizeof maybe);
     if (result == -1)
@@ -862,8 +883,11 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     // NOTE: here host = "", so the 'connmode' will be returned as LISTENER always,
     // but it doesn't matter here. We don't use 'connmode' for anything else than
     // checking for failures.
+
+    // SRT连接前需要设置的参数，返回SRT连接模式
     SocketOption::Mode conmode = SrtConfigurePre(sock, "",  m_options, &failures);
 
+    // 设置失败，错误处理
     if (conmode == SocketOption::FAILURE)
     {
         if (Verbose::on )

@@ -307,7 +307,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
         PrintOptionHelp(o_loglevel,  "<level=warn>", "log level {fatal,error,warn,note,info,debug}");
         PrintOptionHelp(o_logfa,     "<fas>", "log functional area (see '-h logging' for more info)");
-        //PrintOptionHelp(o_log_internal, "", "use internal logger");
+        PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
@@ -447,6 +447,7 @@ int main(int argc, char** argv)
     std::ofstream logfile_stream; // leave unused if not set
     char NAME[] = "SRTLIB";
     // 使用内部日志
+    cout << "log_internal: " << (cfg.log_internal ? "true" : "false") << endl;
     if (cfg.log_internal)
     {
         cout << "use internal log" << endl;
@@ -574,6 +575,7 @@ int main(int argc, char** argv)
             if (!src.get())
             {
                 // 根据命令行参数创建源
+                cout << "Source Creating..." << endl;
                 src = Source::Create(cfg.source);
                 if (!src.get())
                 {
@@ -629,6 +631,7 @@ int main(int argc, char** argv)
             /*
                 首次执行时，根据命令行参数创建目标
             */
+            // cout << "Target Creating..." << endl;
             if (!tar.get())
             {
                 // 根据命令行参数创建目标
@@ -1019,6 +1022,10 @@ int main(int argc, char** argv)
 
 // Class utilities
 
+std::string getFileName(const std::string& filePath) {
+    size_t lastSlash = filePath.find_last_of("/\\");
+    return (lastSlash == std::string::npos) ? filePath : filePath.substr(lastSlash + 1);
+}
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
@@ -1031,11 +1038,58 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
         prefix[sizeof(prefix) - 1] = '\0';
 #endif
     }
+
+// #define LOG_EMERG       0
+// #define LOG_ALERT       1
+// #define LOG_CRIT        2
+// #define LOG_ERR         3
+// #define LOG_WARNING     4
+// #define LOG_NOTICE      5
+// #define LOG_INFO        6
+// #define LOG_DEBUG       7
+
+    string levelStr;
+    switch(level)
+    {
+        case LOG_EMERG:
+            levelStr = "EMERG";
+            break;
+        case LOG_ALERT:
+            levelStr = "ALERT";
+            break;
+        case LOG_CRIT:
+            levelStr = "CRIT";
+            break;
+        case LOG_ERR:
+            levelStr = "ERROR";
+            break;
+        case LOG_WARNING:
+            levelStr = "WARN";
+            break;
+        case LOG_NOTICE:
+            levelStr = "NOTIC";
+            break;
+        case LOG_INFO:
+            levelStr = "INFO";
+            break;
+        case LOG_DEBUG:
+            levelStr = "DEBUG";
+            break;
+        default:
+            levelStr = "UNKWN";
+            break;
+    }
+
+    size_t pos = 0;
+    char buf[1024];
+    pos += snprintf(buf + pos, sizeof(buf) - pos, "[%-5s]", levelStr.c_str());
+
     time_t now;
     time(&now);
-    char buf[1024];
     struct tm local = SysLocalTime(now);
-    size_t pos = strftime(buf, 1024, "[%c ", &local);
+    // size_t pos = strftime(buf, 1024, "[%c ", &local);
+    pos += strftime(buf + pos, sizeof(buf) - pos, "[%Y-%m-%d %H:%M:%S ", &local);
+
 
 #ifdef _MSC_VER
     // That's something weird that happens on Microsoft Visual Studio 2013
@@ -1044,7 +1098,8 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     // is available on backward compatibility and it doesn't work exactly the same way.
 #define snprintf _snprintf
 #endif
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
+    const char* fileName = getFileName(file).c_str();
+    snprintf(buf+pos, 1024-pos, "| %s:%d(%s)] %s", fileName, line, area, message);
 
     cerr << buf << endl;
 }

@@ -84,11 +84,13 @@ int inet_pton(int af, const char * src, void * dst)
 }
 #endif // _WIN32 && !HAVE_INET_PTON
 
+// 创建IPv4/IPv6地址
 sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family)
 {
     // Handle empty name.
     // If family is specified, empty string resolves to ANY of that family.
     // If not, it resolves to IPv4 ANY (to specify IPv6 any, use [::]).
+    // IP为空，解析为任意地址+端口号
     if (name == "")
     {
         sockaddr_any result(pref_family == AF_INET6 ? pref_family : AF_INET);
@@ -96,6 +98,7 @@ sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family
         return result;
     }
 
+    // IPv4/IPv6
     bool first6 = pref_family != AF_INET;
     int families[2] = {AF_INET6, AF_INET};
     if (!first6)
@@ -110,6 +113,7 @@ sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family
         sockaddr_any result (family);
 
         // Try to resolve the name by pton first
+        // 判断地址是否合法
         if (inet_pton(family, name.c_str(), result.get_addr()) == 1)
         {
             result.hport(port); // same addr location in ipv4 and ipv6

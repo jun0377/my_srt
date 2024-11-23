@@ -31,57 +31,87 @@ struct TransmissionError: public std::runtime_error
     }
 };
 
+// SRT公共类
 class SrtCommon
 {
 protected:
 
+    // 传输方向，是发送还是接受，
     bool m_output_direction = false; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
+    // 发送/接收超时
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_output_direction
+    // 是否使用基于时间戳的数据包传递模式
     bool m_tsbpdmode = true;
+    
+    // 出站端口
     int m_outgoing_port = 0;
+    // 连接模式:Listener/Caller/Rendezvous
     string m_mode;
+    // 网络适配器,指定使用哪个网络接口
     string m_adapter;
+    // URI中暂时没有进行处理的选项，便于后续扩展
     map<string, string> m_options; // All other options, as provided in the URI
+    // SRT套接字
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
+    // SRT监听套接字
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
+    // SRT套接字是否可用
     bool IsUsable() { SRT_SOCKSTATUS st = srt_getsockstate(m_sock); return st > SRTS_INIT && st < SRTS_BROKEN; }
+    // SRT连接是否正常
     bool IsBroken() { return srt_getsockstate(m_sock) > SRTS_CONNECTED; }
 
 public:
+    // 初始化参数
     void InitParameters(string host, map<string,string> par);
+    // 准备监听
     void PrepareListener(string host, int port, int backlog);
+    // 从其他SRTCmmon对象中获取资源
     void StealFrom(SrtCommon& src);
+    // 是否接受新的客户端连接
     bool AcceptNewClient();
 
+    // 获取SRTSOCKET
     SRTSOCKET Socket() const { return m_sock; }
+    // 获取SRT监听套接字
     SRTSOCKET Listener() const { return m_bindsock; }
-
+    // 关闭SRT套接字
     void Close();
 
 protected:
 
+    // 错误处理
     void Error(string src);
+    // 初始化
     void Init(string host, int port, map<string,string> par, bool dir_output);
 
+    // 连接后的配置
     virtual int ConfigurePost(SRTSOCKET sock);
+    // 连接前的配置
     virtual int ConfigurePre(SRTSOCKET sock);
 
+    // 打开客户端
     void OpenClient(string host, int port);
+    // 准备客户端
     void PrepareClient();
+    // 设置网络适配器
     void SetupAdapter(const std::string& host, int port);
+    // 连接客户端
     void ConnectClient(string host, int port);
 
+    // 打开服务器
     void OpenServer(string host, int port)
     {
+        // 准备监听
         PrepareListener(host, port, 1);
     }
 
+    // 开启交会连接模式
     void OpenRendezvous(string adapter, string host, int port);
 
     virtual ~SrtCommon();
 };
 
-
+// SRT源
 class SrtSource: public Source, public SrtCommon
 {
     std::string hostport_copy;
