@@ -72,35 +72,55 @@ using srt_logging::applog;
 
 class Medium
 {
+    // 引用计数
     static int s_counter;
+    // 每个媒体实例的标识ID
     int m_counter;
 public:
+    // 从媒体读取数据时的状态: 读数据/再次读数据/读到末尾/读数据错误
     enum ReadStatus
     {
         RD_DATA, RD_AGAIN, RD_EOF, RD_ERROR
     };
 
+    /*
+        两种模式:
+            - listener模式 - 类似TCP Server
+            - caller模式 - 类似TCP Client
+    */
     enum Mode
     {
         LISTENER, CALLER
     };
 
 protected:
+    // URI解析器
     UriParser m_uri;
+    // 数据块大小
     size_t m_chunk = 0;
+    // 用户配置的选项
     map<string, string> m_options;
+    // 模式: listener/caller
     Mode m_mode;
 
+    // 是否作为listener
     bool m_listener = false;
+    // 媒体是否已经打开
     bool m_open = false;
+    // 是否已经读到了末尾
     bool m_eof = false;
+    // 连接是否出现异常
     bool m_broken = false;
 
     std::mutex access; // For closing
 
+    // 模板方法 - 创建一个用于接收连接的媒体实例
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
     {
+        cout << "srt-tunnel.cpp CreateAcceptor" << endl;
+
+        // 接收媒体连接的本地地址
         string addr = sockaddr_any(sa.get(), sizeof sa).str();
         DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
@@ -109,7 +129,9 @@ protected:
 
 public:
 
+    // 获取媒体URI
     string uri() { return m_uri.uri(); }
+    // 获取媒体流ID
     string id()
     {
         std::ostringstream os;
@@ -117,13 +139,18 @@ public:
         return os.str();
     }
 
+    // 构造函数
     Medium(const UriParser& u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
     Medium(): m_counter(s_counter++) {}
 
+    // 获取媒体流的类型
     virtual const char* type() = 0;
+    // 媒体流是否已经打开
     virtual bool IsOpen() = 0;
+    // 
     virtual void CloseInternal() = 0;
 
+    // 关闭媒体流时，设置相关标志位
     void CloseState()
     {
         m_open = false;
@@ -134,29 +161,41 @@ public:
     // the entity on request. The CloseInternal should
     // redirect to a type-specific function, the same that
     // should be also called in destructor.
+    // 关闭媒体流
     void Close()
     {
         CloseState();
         CloseInternal();
     }
+    // 媒体流是否已经结束
     virtual bool End() = 0;
 
+    // 具体的读取数据方法
     virtual int ReadInternal(char* output, int size) = 0;
     virtual bool IsErrorAgain() = 0;
 
+    // 从媒体流读数据
     ReadStatus Read(bytevector& output);
+    // 向媒体流写数据
     virtual void Write(bytevector& portion) = 0;
 
+    // 创建一个listener
     virtual void CreateListener() = 0;
+    // 创建一个caller
     virtual void CreateCaller() = 0;
+    // 接收连接
     virtual unique_ptr<Medium> Accept() = 0;
+    // 连接对端
     virtual void Connect() = 0;
 
+    // 根据URI创建一个SRT或TCP媒体流
     static std::unique_ptr<Medium> Create(const std::string& url, size_t chunk, Mode);
 
+    // 连接是否出现异常
     virtual bool Broken() = 0;
     virtual size_t Still() { return 0; }
 
+    // 读取到EOF时抛出的异常
     class ReadEOF: public std::runtime_error
     {
     public:
@@ -165,6 +204,7 @@ public:
         }
     };
 
+    // 传输错误时抛出的异常
     class TransmissionError: public std::runtime_error
     {
     public:
@@ -173,6 +213,7 @@ public:
         }
     };
 
+    // 内部错误时抛出的异常
     static void Error(const string& text)
     {
         throw TransmissionError("ERROR (internal): " + text);
@@ -184,16 +225,19 @@ public:
     }
 
 protected:
+    // 初始化模式: listener/caller
     void InitMode(Mode m)
     {
         m_mode = m;
         Init();
 
+        // 创建listener
         if (m_mode == LISTENER)
         {
             CreateListener();
             m_listener = true;
         }
+        // 创建caller
         else
         {
             CreateCaller();
@@ -830,6 +874,7 @@ bool TcpMedium::IsErrorAgain()
 Medium::ReadStatus Medium::Read(bytevector& w_output)
 {
     // Don't read, but fake that you read
+    // 缓冲区中的数据量超过预设的数据块大小，返回RD_DATA，让用户先处理缓冲区中的数据，等缓冲区清空后再进行读取
     if (w_output.size() > m_chunk)
     {
         Verb() << "BUFFER EXCEEDED";
@@ -837,6 +882,8 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
     }
 
     // Resize to maximum first
+    // 输入流已经读到了末尾，但是此时缓冲区中仍有数据
+    // 此时不应该返回RD_EOF,而是返回RD_DATA，表示缓冲区中仍有数据尚未处理
     size_t shift = w_output.size();
     if (shift && m_eof)
     {
@@ -848,9 +895,12 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
         return RD_DATA;
     }
 
+    // 预期的数据量大小: 当前缓冲区中的数据量 + 预设的数据块大小
     size_t pred_size = shift + m_chunk;
 
+    // 调整缓冲区大小
     w_output.resize(pred_size);
+    // 从媒体流中读取数据
     int st = ReadInternal((w_output.data() + shift), (int)m_chunk);
     if (st == -1)
     {
@@ -860,9 +910,12 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
         return RD_ERROR;
     }
 
+    // 读取到的数据量为0，表示媒体流已经结束，读到了EOF
     if (st == 0)
     {
+        // 设置EOF标志位
         m_eof = true;
+        // 如果缓冲区中仍有数据，则返回RD_DATA，表示缓冲区中仍有数据尚未处理
         if (shift)
         {
             // If there's 0 (eof), but you still have data
@@ -875,10 +928,12 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
             w_output.resize(shift);
             return RD_DATA;
         }
+
         w_output.clear();
         return RD_EOF;
     }
 
+    // 调整缓冲区大小
     w_output.resize(shift+st);
     return RD_DATA;
 }
@@ -929,16 +984,21 @@ void TcpMedium::Write(bytevector& w_buffer)
     }
 }
 
+// 根据URI创建一个SRT或TCP媒体流
 std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Medium::Mode mode)
 {
+    // 解析URI
     UriParser uri(url);
     std::unique_ptr<Medium> out;
 
     // Might be something smarter, but there are only 2 types.
+
+    // 创建一个SRT媒体流
     if (uri.scheme() == "srt")
     {
         out.reset(new SrtMedium(uri, chunk));
     }
+    // 创建要给TCP媒体流
     else if (uri.scheme() == "tcp")
     {
         out.reset(new TcpMedium(uri, chunk));
@@ -948,6 +1008,7 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
         Error("Medium not supported");
     }
 
+    // 初始化模式: listener/caller,创建一个listener或caller
     out->InitMode(mode);
 
     return out;
@@ -1054,6 +1115,7 @@ bool Tunnel::decommission_if_dead(bool forced)
     return true;
 }
 
+// 初始ID
 int Medium::s_counter = 1;
 
 Tunnelbox g_tunnels;

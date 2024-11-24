@@ -63,7 +63,7 @@ protected:
 public:
     // 初始化参数
     void InitParameters(string host, map<string,string> par);
-    // 准备监听
+    // 创建一个SRTSOCKET，并开始监听
     void PrepareListener(string host, int port, int backlog);
     // 从其他SRTCmmon对象中获取资源
     void StealFrom(SrtCommon& src);
@@ -93,7 +93,7 @@ protected:
     void OpenClient(string host, int port);
     // 准备客户端
     void PrepareClient();
-    // 设置网络适配器
+    // 设置网络适配器，绑定SRT套接字到指定地址
     void SetupAdapter(const std::string& host, int port);
     // 连接客户端
     void ConnectClient(string host, int port);
@@ -114,6 +114,7 @@ protected:
 // SRT源
 class SrtSource: public Source, public SrtCommon
 {
+    // 保存主机地址+端口号
     std::string hostport_copy;
 public:
 

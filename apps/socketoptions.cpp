@@ -146,6 +146,7 @@ SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, string host, map<string, st
     return all_clear ? mode : SocketOption::FAILURE;
 }
 
+// SRT连接建立成功后，设置SRT套接字参数
 void SrtConfigurePost(SRTSOCKET socket, map<string, string> options, vector<string>* failures)
 {
     vector<string> dummy;

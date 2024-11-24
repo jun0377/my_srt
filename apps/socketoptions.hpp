@@ -211,6 +211,8 @@ inline bool SocketOption::apply(Object socket, std::string value) const
 extern const std::map<std::string, int> enummap_transtype;
 
 namespace {
+
+// SRT套接字参数
 const SocketOption srt_options [] {
     { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype },
     { "maxbw", 0, SRTO_MAXBW, SocketOption::POST, SocketOption::INT64, nullptr},

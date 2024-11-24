@@ -679,7 +679,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         backlog = 10;
     }
 
-    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
+    Verb() << "SrtCommon::Init Opening SRT " << DirectionName(dir) << " " << m_mode
         << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
         << " backlog=" << backlog << ") on "
         << host << ":" << port;

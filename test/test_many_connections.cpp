@@ -133,7 +133,7 @@ TEST_F(TestConnection, Multiple)
 
     auto ex = std::async(std::launch::async, [this] { return AcceptLoop(); });
 
-    cerr << "Opening " << NSOCK << " connections\n";
+    cerr << "TEST_F Opening " << NSOCK << " connections\n";
 
     bool overall_test = true;
 

@@ -425,6 +425,8 @@ int main(int argc, char** argv)
     // 是否输出完整的状态日志
     transmit_total_stats = cfg.full_stats;
     cout << "transmit_total_stats: " << (transmit_total_stats ? "true" : "false") << endl;
+    // 是否静默输出
+    cout << "cfg.quiet: " << (cfg.quiet ? "true" : "false") << endl;
 
     //
     // Set SRT log levels and functional areas
@@ -565,6 +567,9 @@ int main(int argc, char** argv)
     // 发生错误时的时间戳
     std::time_t writeErrorLogTimer(std::time(nullptr));
 
+
+    std::vector<std::string> types_vec = {"UNKNOWN", "FILE", "UDP", "TCP", "SRT", "RTMP", "HTTP", "RTP"};
+
     try {
         // Now loop until broken
         while (!int_state && !timer_state)
@@ -575,8 +580,9 @@ int main(int argc, char** argv)
             if (!src.get())
             {
                 // 根据命令行参数创建源
-                cout << "Source Creating..." << endl;
+                cout << "srt-live-transmit.cpp Source " << cfg.source<< endl;
                 src = Source::Create(cfg.source);
+                cout << "srt-live-transmit.cpp Source Creating... type: " << types_vec[src->uri.type()] << endl;
                 if (!src.get())
                 {
                     cerr << "Unsupported source type" << endl;
@@ -613,8 +619,7 @@ int main(int argc, char** argv)
                     break;
                 // 源是一个文件，普通文件描述符，同样认为是一个SYSSOCKET
                 case UriParser::FILE:
-                    if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
+                    if (srt_epoll_add_ssock(pollid, src->GetSysSocket(), &events))
                     {
                         cerr << "Failed to add FILE source to poll, "
                             << src->GetSysSocket() << endl;
@@ -631,11 +636,12 @@ int main(int argc, char** argv)
             /*
                 首次执行时，根据命令行参数创建目标
             */
-            // cout << "Target Creating..." << endl;
             if (!tar.get())
             {
-                // 根据命令行参数创建目标
+                // 根据命令行参数创建目标,比如创建一个SRT目标listener，等待客户端连接拉流
+                cout << "srt-live-transmit.cpp Target " << cfg.target << endl;
                 tar = Target::Create(cfg.target);
+                cout << "srt-live-transmit.cpp Target Creating... type: " << types_vec[tar->uri.type()] << endl;
                 if (!tar.get())
                 {
                     cerr << "Unsupported target type" << endl;
@@ -733,12 +739,12 @@ int main(int argc, char** argv)
                     case SRTS_LISTENING:
                     {
                         // 接受新的连接
-                        const bool res = (issource) ?
-                            src->AcceptNewClient() : tar->AcceptNewClient();
+                        cout << "srt-live-transmit.cpp " << dirstring << endl;
+                        cout << "srt-live-transmit.cpp " << "AcceptNewClient" << endl;
+                        const bool res = (issource) ? src->AcceptNewClient() : tar->AcceptNewClient();
                         if (!res)
                         {
-                            cerr << "Failed to accept SRT connection"
-                                << endl;
+                            cerr << "Failed to accept SRT connection" << endl;
                             doabort = true;
                             break;
                         }
@@ -748,8 +754,7 @@ int main(int argc, char** argv)
                         srt_epoll_remove_usock(pollid, s);
 
                         // 将新的SRTSOCKET添加到epoll中，不必关注写事件，只关注读个异常事件
-                        SRTSOCKET ns = (issource) ?
-                            src->GetSRTSocket() : tar->GetSRTSocket();
+                        SRTSOCKET ns = (issource) ? src->GetSRTSocket() : tar->GetSRTSocket();
                         int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
                         if (srt_epoll_add_usock(pollid, ns, &events))
                         {
@@ -799,8 +804,7 @@ int main(int argc, char** argv)
                             {
                                 if (!cfg.quiet)
                                 {
-                                    cerr << "SRT source disconnected"
-                                        << endl;
+                                    cerr << "SRT source disconnected" << endl;
                                 }
                                 srcConnected = false;
                             }
@@ -849,6 +853,7 @@ int main(int argc, char** argv)
                         */
 
                         // 源连接成功,置标志位
+                        cout << "srt-live-transmit.cpp " << "SRTS_CONNECTED" << endl;
                         if (issource)
                         {
                             if (!srcConnected)
@@ -914,7 +919,7 @@ int main(int argc, char** argv)
                 // 直播模式下，每次读事件中的处理中，尽可能多地读取缓冲区
                 // 注意：这种模式不适用于缓存/文件传输模式
 
-                // 缓存媒体数据包地队列
+                // 缓存媒体数据包的队列
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
 
                 /*
@@ -924,7 +929,8 @@ int main(int argc, char** argv)
                 // 源已创建，且已打开，且有可读的SRTSOCKET或系统套接字SYSSOCKET
                 if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
-                    // 
+                    // cout << "srt-live-transmit.cpp Source is open and has readable sockets" << endl;
+                    // 循环读取数据包
                     while (dataqueue.size() < cfg.buffering)
                     {
                         // 创建一个媒体数据包
@@ -1000,7 +1006,7 @@ int main(int argc, char** argv)
                             2373688 bytes lost, 140812 bytes sent, 2514500 bytes received
                         */
                 
-                        cerr << lostBytes << " bytes lost, "
+                        cerr << "srt-live-transmit.cpp " << lostBytes << " bytes lost, "
                             << wroteBytes << " bytes sent, "
                             << receivedBytes << " bytes received"
                             << endl;

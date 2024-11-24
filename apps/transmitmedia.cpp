@@ -111,7 +111,7 @@ Iface* CreateFile(const string& name) { return new typename File<Iface>::type (n
 
 shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
-// 初始化SRT通用参数: 连接模式/网络适配器/超时时间/出战端口...
+// 初始化SRT通用参数: 连接模式/网络适配器/超时时间/出站端口...
 void SrtCommon::InitParameters(string host, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
@@ -230,20 +230,25 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     m_options = par;
 }
 
+// SRT listener: 创建一个SRTSOCKET，并开始监听..
 void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
+    // 创建一个SRT套接字
     m_bindsock = srt_create_socket();
     if ( m_bindsock == SRT_ERROR )
         Error("srt_create_socket");
 
+    // 建立SRT连接前需要设置的SRTSOCKET参数:TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
     int stat = ConfigurePre(m_bindsock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
+    // 创建监听地址
     sockaddr_any sa = CreateAddr(host, port);
     sockaddr* psa = sa.get();
-    Verb() << "Binding a server on " << host << ":" << port << " ...";
+    Verb() << "transmitmedia.cpp->SrtCommon::PrepareListener Binding a server on " << host << ":" << port << " ...";
 
+    // bind
     stat = srt_bind(m_bindsock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
@@ -251,8 +256,9 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         Error("srt_bind");
     }
 
-    Verb() << " listen...";
+    Verb() << "transmitmedia.cpp->SrtCommon::PrepareListener listen...";
 
+    // listen
     stat = srt_listen(m_bindsock, backlog);
     if ( stat == SRT_ERROR )
     {
@@ -304,18 +310,26 @@ bool SrtCommon::AcceptNewClient()
     return true;
 }
 
+// SRT源或目标初始化:创建一个listener或caller
 void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_output)
 {
+    // 是否是输出流
     m_output_direction = dir_output;
+    // 初始化SRT通用参数: 连接模式/网络适配器/超时时间/出站端口...
     InitParameters(host, par);
 
-    Verb() << "Opening SRT " << (dir_output ? "target" : "source") << " " << m_mode
+    Verb() << "transmitmedia.cpp->SrtCommon::Init Opening SRT " << (dir_output ? "target" : "source") << " " << m_mode
         << " on " << host << ":" << port;
 
+    /* 根据连接模式，打开客户端或服务器 */
+
+    // client: 创建一个SRT caller, 并连接到SRT服务器
     if ( m_mode == "caller" )
         OpenClient(host, port);
+    // server: 创建一个SRT listener, 开始监听,等待客户端来拉流
     else if ( m_mode == "listener" )
         OpenServer(m_adapter, port);
+    // rendezvous: 交会连接模式，绑定本地地址，和对端建立连接
     else if ( m_mode == "rendezvous" )
         OpenRendezvous(m_adapter, host, port);
     else
@@ -324,31 +338,39 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
     }
 }
 
+// 建立SRT连接后，需要配置的SRTSOCKET参数: 异步模式/超时时间...
 int SrtCommon::ConfigurePost(SRTSOCKET sock)
 {
     bool no = false;
     int result = 0;
+
+    // 输出流: 禁用同步发送模式，即当发送缓冲区中没有空间时，send()不会阻塞
     if ( m_output_direction )
     {
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &no, sizeof no);
         if ( result == -1 )
             return result;
 
+        // 异步发送模式下,send()的超时时间, 默认0; 即当发送缓冲区中没有空间时，立即返回
         if ( m_timeout )
             return srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &m_timeout, sizeof m_timeout);
     }
+    // 输入流: 禁用同步接收模式，即当接收缓冲区中没有数据时，recv()不会阻塞
     else
     {
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
         if ( result == -1 )
             return result;
 
+        // 异步接收模式下,recv()的超时时间, 默认0; 即当接收缓冲区中没有数据时，立即返回
         if ( m_timeout )
             return srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
     }
 
+    // 设置所有用户配置的SRT套接字参数
     SrtConfigurePost(sock, m_options);
 
+    // 用户没有配置的参数，使用默认配置
     for (const auto &o: srt_options)
     {
         if ( o.binding == SocketOption::POST && m_options.count(o.name) )
@@ -356,22 +378,24 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
             string value = m_options.at(o.name);
             bool ok = o.apply<SocketOption::SRT>(sock, value);
             if ( !ok )
-                Verb() << "WARNING: failed to set '" << o.name << "' (post, "
+                Verb() << "transmitmedia.cpp->SrtCommon::ConfigurePost WARNING: failed to set '" << o.name << "' (post, "
                     << (m_output_direction? "target":"source") << ") to "
                     << value;
             else
-                Verb() << "NOTE: SRT/post::" << o.name << "=" << value;
+                Verb() << "transmitmedia.cpp->SrtCommon::ConfigurePost NOTE: SRT/post::" << o.name << "=" << value;
         }
     }
 
     return 0;
 }
 
+// 建立SRT连接前，配置SRT套接字: TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
 int SrtCommon::ConfigurePre(SRTSOCKET sock)
 {
     int result = 0;
 
     bool no = false;
+    // 是否使用基于时间戳的数据包传递模式
     if ( !m_tsbpdmode )
     {
         result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
@@ -379,6 +403,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
             return result;
     }
 
+    // 设置同步接收，即阻塞接收，默认使用异步接收模式
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
     if ( result == -1 )
         return result;
@@ -391,13 +416,16 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     // NOTE: here host = "", so the 'connmode' will be returned as LISTENER always,
     // but it doesn't matter here. We don't use 'connmode' for anything else than
     // checking for failures.
+
+    // 配置SRT套接字: 连接模式/网络适配器设置/延迟关闭设置...
     SocketOption::Mode conmode = SrtConfigurePre(sock, "",  m_options, &failures);
 
+    // 检查SRT套接字配置是否成功
     if ( conmode == SocketOption::FAILURE )
     {
         if ( Verbose::on )
         {
-            cerr << "WARNING: failed to set options: ";
+            cerr << "transmitmedia.cpp->SrtCommon::ConfigurePre WARNING: failed to set options: ";
             copy(failures.begin(), failures.end(), ostream_iterator<string>(cerr, ", "));
             cerr << endl;
         }
@@ -408,6 +436,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
+// 设置网络适配器，绑定SRT套接字到指定地址
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
     sockaddr_any localsa = CreateAddr(host, port);
@@ -417,38 +446,46 @@ void SrtCommon::SetupAdapter(const string& host, int port)
         Error("srt_bind");
 }
 
+// 开启SRT客户端
 void SrtCommon::OpenClient(string host, int port)
 {
+    // 开启客户端前的准备工作, 创建并设置SRTSOCKET选项
     PrepareClient();
 
+    // 如果指定了输出端口或网络适配器，则将SRT套接字绑定到指定地址
     if (m_outgoing_port || m_adapter != "")
     {
         SetupAdapter(m_adapter, m_outgoing_port);
     }
 
+    // 和SRT服务器建立连接
     ConnectClient(host, port);
 }
 
+// 开启客户端前的准备工作, 创建并设置SRTSOCKET选项
 void SrtCommon::PrepareClient()
 {
+    // 创建一个SRT套接字
     m_sock = srt_create_socket();
     if ( m_sock == SRT_ERROR )
         Error("srt_create_socket");
 
+    // 配置SRT套接字: TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 }
 
-
+// 和SRT服务器建立连接
 void SrtCommon::ConnectClient(string host, int port)
 {
-
+    // 根据参数创建地址
     sockaddr_any sa = CreateAddr(host, port);
     sockaddr* psa = sa.get();
 
-    Verb() << "Connecting to " << host << ":" << port;
+    Verb() << "transmitmedia.cpp->SrtCommon::ConnectClient Connecting to " << host << ":" << port;
 
+    // 建立SRT连接
     int stat = srt_connect(m_sock, psa, sizeof sa);
     if ( stat == SRT_ERROR )
     {
@@ -456,6 +493,7 @@ void SrtCommon::ConnectClient(string host, int port)
         Error("srt_connect");
     }
 
+    // 建立SRT连接后需要配置的SRTSOCKET选项
     stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePost");
@@ -471,31 +509,39 @@ void SrtCommon::Error(string src)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
+// 开启交会连接模式
 void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 {
+    // 创建一个SRT套接字
     m_sock = srt_create_socket();
     if ( m_sock == SRT_ERROR )
         Error("srt_create_socket");
 
+    // 设置交会连接模式
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
+    // 建立SRT连接前需要设置的SRTSOCKET参数: TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
     int stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
+    // 对端地址
     sockaddr_any sa = CreateAddr(host, port);
     if (sa.family() == AF_UNSPEC)
     {
         Error("OpenRendezvous: invalid target host specification: " + host);
     }
 
+    // 出站端口
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
+    // 本地地址
     sockaddr_any localsa = CreateAddr(adapter, outport, sa.family());
 
-    Verb() << "Binding a server on " << adapter << ":" << outport;
+    Verb() << "transmitmedia.cpp->SrtCommon::OpenRendezvous Binding a server on " << adapter << ":" << outport;
 
+    // 交会连接模式下，要求两端都必须要绑定地址
     stat = srt_bind(m_sock, localsa.get(), sizeof localsa);
     if ( stat == SRT_ERROR )
     {
@@ -503,8 +549,9 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
         Error("srt_bind");
     }
 
-    Verb() << "Connecting to " << host << ":" << port;
+    Verb() << "transmitmedia.cpp->SrtCommon::OpenRendezvous Connecting to " << host << ":" << port;
 
+    // 连接对端
     stat = srt_connect(m_sock, sa.get(), sizeof sa);
     if ( stat == SRT_ERROR )
     {
@@ -512,6 +559,7 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
         Error("srt_connect");
     }
 
+    // 建立SRT连接后需要配置的SRTSOCKET选项:主要是将发送接收改为异步模式
     stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePost");
@@ -541,10 +589,13 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
+// SRT源初始化
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
+    // SRT源初始化,false表示是一个输入流，即接收数据
     Init(host, port, par, false);
 
+    // 保存主机地址+端口号
     ostringstream os;
     os << host << ":" << port;
     hostport_copy = os.str();
@@ -815,6 +866,7 @@ SocketOption udp_options [] {
     { "rcvbuf", SOL_SOCKET, SO_RCVBUF, SocketOption::PRE, SocketOption::INT, nullptr}
 };
 
+// 判断是否为组播地址：对于IPv4，组播地址范围为224.0.0.0到239.255.255.255
 static inline bool IsMulticast(in_addr adr)
 {
     unsigned char* abytes = (unsigned char*)&adr.s_addr;
@@ -822,25 +874,36 @@ static inline bool IsMulticast(in_addr adr)
     return c >= 224 && c <= 239;
 }
 
-
+/*
+    UDP流的通用类
+        - 创建一个UDP套接字，并设置为非阻塞模式
+*/
 class UdpCommon
 {
 protected:
+    // SYSSOCKET
     int m_sock = -1;
+    // 本地地址，用于绑定
     sockaddr_any sadr;
+    // 网络适配器
     string adapter;
+    // 选项
     map<string, string> m_options;
 
+    // 创建一个UDP套接字，并设置为非阻塞模式
     void Setup(string host, int port, map<string,string> attr)
     {
+        // 创建一个UDP套接字
         m_sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == -1)
             Error(SysError(), "UdpCommon::Setup: socket");
 
+        // 地址复用
         int yes = 1;
         ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
 
         // set non-blocking mode
+        // 设置套接字为非阻塞模式
 #if defined(_WIN32)
         unsigned long ulyes = 1;
         if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
@@ -851,10 +914,13 @@ protected:
             Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
         }
 
+        // 地址
         sadr = CreateAddr(host, port);
 
+        // 是否为组播
         bool is_multicast = false;
 
+        // 设置了组播选项
         if (attr.count("multicast"))
         {
             // XXX: Here provide support for IPv6 multicast #1479
@@ -869,11 +935,13 @@ protected:
             }
             is_multicast = true;
         }
+        // 判断是否是一个组播地址
         else if (sadr.family() == AF_INET && IsMulticast(sadr.sin.sin_addr))
         {
             is_multicast = true;
         }
 
+        // 开启组播
         if (is_multicast)
         {
             ip_mreq mreq;
@@ -957,6 +1025,7 @@ protected:
 
         // The "ttl" options is handled separately, it maps to both IP_TTL
         // and IP_MULTICAST_TTL so that TTL setting works for both uni- and multicast.
+        // 设置ttl选项
         if (attr.count("ttl"))
         {
             int ttl = stoi(attr.at("ttl"));
@@ -972,6 +1041,7 @@ protected:
 
         m_options = attr;
 
+        // 设置其它选项
         for (auto o: udp_options)
         {
             // Ignore "binding" - for UDP there are no post options.
@@ -1010,29 +1080,39 @@ protected:
     }
 };
 
-
+// 源是UDP类型
 class UdpSource: public Source, public UdpCommon
 {
 protected:
+    // 是否读到UDP流的末尾，即UDP流是否结束
     bool eof = true;
 public:
 
+    // 构造函数 - 
     UdpSource(string host, int port, const map<string,string>& attr)
     {
+        // 创建一个UDP套接字，并设置为非阻塞模式
         Setup(host, port, attr);
+        // 地址绑定
         int stat = ::bind(m_sock, sadr.get(), sadr.size());
         if ( stat == -1 )
             Error(SysError(), "Binding address for UDP");
         eof = false;
+
+        cout << "transmitmedia.cpp->UdpSource UDP Socket bind at " << host << ":" << port << endl;
     }
 
+    // 从UDP流中读取指定大小的数据
     int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
+        // 确保媒体数据包的缓冲区有足够空间容纳一个chunk大小的数据
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
+        // 保存对端地址
         sockaddr_any sa(sadr.family());
         socklen_t si = sa.size();
+        // 从UDP套接字中读取数据
         int stat = recvfrom(m_sock, pkt.payload.data(), (int) chunk, 0, sa.get(), &si);
         if (stat < 1)
         {
@@ -1044,17 +1124,23 @@ public:
         sa.len = si;
 
         // Save this time to potentially use it for SRT target.
+        // 保存从UDP中接收到数据时的时间戳
         pkt.time = srt_time_now();
+        // 真实读取到的数据大小
         chunk = size_t(stat);
+        // 调整pkt负载的大小，优化内存使用
         if (chunk < pkt.payload.size())
             pkt.payload.resize(chunk);
 
         return stat;
     }
 
+    // 判断UDP套接字是否已创建
     bool IsOpen() override { return m_sock != -1; }
+    // 判断UDP流是否结束
     bool End() override { return eof; }
 
+    // 获取UDP套接字
     int GetSysSocket() const override { return m_sock; };
 };
 
@@ -1104,10 +1190,14 @@ public:
     int GetSysSocket() const override { return m_sock; };
 };
 
+// 定义一个模板结构体struct Udp
 template <class Iface> struct Udp;
+// 模板特化 - 定义一个UdpSource类型; UdpSource == Udp<Source>::type;
 template <> struct Udp<Source> { typedef UdpSource type; };
+// 模板特化 - 定义一个UdpTarget类型; UdpTarget == Udp<Target>::type;
 template <> struct Udp<Target> { typedef UdpTarget type; };
 
+// 模板函数 - 根据传入的Iface类型，创建一个UdpSource或UdpTarget对象
 template <class Iface>
 Iface* CreateUdp(const string& host, int port, const map<string,string>& par) { return new typename Udp<Iface>::type (host, port, par); }
 
@@ -1179,9 +1269,11 @@ template <> struct Rtp<Target> { typedef RtpTarget type; };
 template <class Iface>
 Iface* CreateRtp(const string& host, int port, const map<string,string>& par) { return new typename Rtp<Iface>::type (host, port, par); }
 
+// 判断是否是输出流
 template<class Base>
 inline bool IsOutput() { return false; }
 
+// 判断是否是输入流
 template<>
 inline bool IsOutput<Target>() { return true; }
 
@@ -1226,8 +1318,9 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
 #endif
         break;
 
-    // URI是一个SRT类型
+    // URI是SRT类型
     case UriParser::SRT:
+        cout << "transmitmedia.cpp->CreateMedium SRT " << endl;
         // 获取URI中的端口号
         iport = atoi(u.port().c_str());
         // 端口号必须大于等于1024,1024以下的是知名端口号，最好不要使用
@@ -1236,12 +1329,14 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
             cerr << "Port value invalid: " << iport << " - must be >=1024\n";
             throw invalid_argument("Invalid port number");
         }
-        // 
+        // 创建一个SRT源或目标对象
         ptr.reset( CreateSrt<Base>(u.host(), iport, u.parameters()) );
         break;
 
-
+    // URI是UDP类型，创建一个UdpSource或UdpTarget对象
     case UriParser::UDP:
+        cout << "transmitmedia.cpp->CreateMedium UDP " << endl;
+        // 获取URI中的端口号，禁止使用知名端口号
         iport = atoi(u.port().c_str());
         if ( iport < 1024 )
         {
@@ -1251,12 +1346,15 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
         break;
 
+    // URI是RTP类型，
     case UriParser::RTP:
+        // 如果是输出流，则报错; RTP协议不支持输出，只能作为输入源
         if (IsOutput<Base>())
         {
             cerr << "RTP not supported as an output\n";
             throw invalid_argument("Invalid output protocol: RTP");
         }
+        // 禁止使用知名端口号
         iport = atoi(u.port().c_str());
         if ( iport < 1024 )
         {
@@ -1267,6 +1365,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
     }
 
+    // 媒体对象创建成功后，保存URI信息
     if (ptr.get())
         ptr->uri = std::move(u);
 
