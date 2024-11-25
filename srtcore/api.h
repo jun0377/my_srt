@@ -167,6 +167,7 @@ public:
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
 
     sync::Condition m_AcceptCond; //< used to block "accept" call
+    // 接受连接时使用的锁
     sync::Mutex     m_AcceptLock; //< mutex associated to m_AcceptCond
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
@@ -184,6 +185,7 @@ public:
     // socket.
     int m_iMuxID; //< multiplexer ID
 
+    // 控制套接字时使用的锁
     sync::Mutex m_ControlLock; //< lock this socket exclusively for control APIs: bind/listen/connect
 
     CUDT&       core() { return m_UDT; }
@@ -411,6 +413,7 @@ private:
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
+    // SRTSOCKET种子，用于生成一个唯一的SRTSOCKET
     SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
     SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one
 

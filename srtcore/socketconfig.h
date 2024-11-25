@@ -220,9 +220,11 @@ struct CSrtConfig: CSrtMuxerConfig
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
+    // 同步发送模式
     bool   bSynSending;     // Sending synchronization mode
     bool   bSynRecving;     // Receiving synchronization mode
     int    iFlightFlagSize; // Maximum number of packets in flight from the peer side
+    // UDT发送缓冲区大小,单位：包
     int    iSndBufSize;     // Maximum UDT sender buffer size
     int    iRcvBufSize;     // Maximum UDT receiver buffer size
     linger Linger;          // Linger information on close
@@ -230,6 +232,7 @@ struct CSrtConfig: CSrtMuxerConfig
 
     duration tdConnTimeOut; // connect timeout in milliseconds
     bool     bDriftTracer;
+    // 发送超时，ms
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
@@ -247,11 +250,13 @@ struct CSrtConfig: CSrtMuxerConfig
     // in order to maintain the HS side selection in HSv4.
     bool bDataSender;
 
+    // 是否使用消息模式
     bool     bMessageAPI;
     bool     bTSBPD;        // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
     int      iRcvLatency;   // Agent's Rx latency
     int      iPeerLatency;  // Peer's Rx latency for the traffic made by Agent's Tx.
     bool     bTLPktDrop;    // Whether Agent WILL DO TLPKTDROP on Rx.
+    // 控制发送端丢包决策的延迟参数，主动丢弃过期数据包
     int      iSndDropDelay; // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool     bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
     int      iGroupConnect;    // 1 - allow group connections

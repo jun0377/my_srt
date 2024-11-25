@@ -189,6 +189,8 @@ public:
     /// @brief Count the number of required packets to store the payload (message).
     /// @param iPldLen the length of the payload to check.
     /// @return the number of required data packets.
+    
+    // 计算iPldLen长度的数据需要占用多少数据块
     int countNumPacketsRequired(int iPldLen) const;
 
     /// @brief Count the number of required packets to store the payload (message).
@@ -226,6 +228,7 @@ private:
 
         int32_t    m_iMsgNoBitset; // message number
         int32_t    m_iSeqNo;       // sequence number for scheduling
+        // 发送缓冲区中数据块的原始时间
         time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
         time_point m_tsRexmitTime; // packet retransmission time
         int        m_iTTL; // time to live (milliseconds)
@@ -258,12 +261,15 @@ private:
     int32_t m_iNextMsgNo; // next message number
 
     int m_iSize; // buffer size (number of packets)
+    // 发送缓冲区数据块最大大小，包含负载和验证标签，不包含包头
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
+    // 验证标签
     const int m_iAuthTagSize; // Authentication tag size (if GCM is enabled).
 
     // NOTE: This is atomic AND under lock because the function getCurrBufSize()
     // is returning it WITHOUT locking. Modification, however, must stay under
     // a lock.
+    // 发送缓冲区已使用的数据块数量
     sync::atomic<int> m_iCount; // number of used blocks
 
     int        m_iBytesCount; // number of payload bytes in queue

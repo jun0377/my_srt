@@ -6520,17 +6520,22 @@ int srt::CUDT::receiveBuffer(char *data, int len)
 
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]];
 // [[using locked(m_SendLock)]];
+
+// 丢弃超时的包
 int srt::CUDT::sndDropTooLate()
 {
+    // 未启用延迟数据包丢弃功能，则不丢弃数据包
     if (!m_bPeerTLPktDrop)
         return 0;
 
+    // 延迟数据包丢弃功能仅支持消息模式
     if (!m_config.bMessageAPI)
     {
         LOGC(aslog.Error, log << CONID() << "The SRTO_TLPKTDROP flag can only be used with message API.");
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
     }
 
+    // 获取发送缓冲区中存储了多长时间的数据
     const time_point tnow = steady_clock::now();
     const int buffdelay_ms = (int) count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
 
@@ -6540,6 +6545,15 @@ int srt::CUDT::sndDropTooLate()
     // >>using 1 sec for worse case 1 frame using all bit budget.
     // picture rate would be useful in auto SRT setting for min latency
     // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
+
+    // 高阈值（毫秒）在 tsbpd_delay 加上发送方/接收方反应时间（2 * 10ms）
+    // 最小值必须能容纳一个 I 帧（约 8 倍于平均帧大小）
+    // >> 需要图像帧率或应用程序来设置最小阈值
+    // >> 在最坏情况下，使用 1 秒来处理 1 帧，使用所有比特预算。
+    // 图像帧率在自动 SRT 设置中将对最小延迟很有用
+    // XXX 使 SRT_TLPKTDROP_MINTHRESHOLD_MS 选项可配置
+
+    // 丢包时间阈值
     const int threshold_ms = (m_config.iSndDropDelay >= 0)
         ? std::max(m_iPeerTsbPdDelay_ms + m_config.iSndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS)
             + (2 * COMM_SYN_INTERVAL_US / 1000)
@@ -6552,10 +6566,12 @@ int srt::CUDT::sndDropTooLate()
     ScopedLock rcvlck(m_RecvAckLock);
     int dbytes;
     int32_t first_msgno;
+    // 发送缓冲区丢弃过期的数据包
     const int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), tnow - milliseconds_from(threshold_ms));
     if (dpkts <= 0)
         return 0;
 
+    // 流控窗口增大，为什么要增大？
     m_iFlowWindowSize = m_iFlowWindowSize + dpkts;
 
     // If some packets were dropped update stats, socket state, loss list and the parent group if any.
@@ -6620,6 +6636,7 @@ int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::send,
 // which is the only case when the m_parent->m_GroupOf is not NULL.
+// 发送数据包，携带控制信息，添加到发送缓冲区中
 int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
     // throw an exception if not connected
@@ -6645,12 +6662,16 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         }
     }
 
+    // TTL，毫秒
     int  msttl   = w_mctrl.msgttl;
+    // 是否允许乱序
     bool inorder = w_mctrl.inorder;
 
     // Sendmsg isn't restricted to the congctl type, however the congctl
     // may want to have something to say here.
     // NOTE: SrtCongestion is also allowed to throw CUDTException() by itself!
+
+    // 拥塞控制
     {
         SrtCongestion::TransAPI api = SrtCongestion::STA_MESSAGE;
         CodeMinor               mn  = MN_INVALMSGAPI;
@@ -6682,6 +6703,20 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     //   out a message of a length that exceeds the total size of the sending
     //   buffer (configurable by SRTO_SNDBUF).
 
+    // - 流 API（STREAM API）:
+    //   至少需要 1 字节的发送缓冲区可用空间
+    //   （实际上，一个单位的缓冲区为 1456 字节）。
+    //   此函数将尽可能发送数据，并返回实际发送的字节数。
+
+    // - 消息 API（MESSAGE API）:
+    //   需要在发送缓冲区中至少有与数据长度相等的可用字节，
+    //   否则该函数将阻塞或返回 MJ_AGAIN，直到满足该条件。
+    //   然后将精确写入该数量的数据，
+    //   此函数将有效地返回 -1（错误）或 'len' 的值。
+    //   此调用也会被上层拒绝，当尝试发送超过发送缓冲区总大小（
+    //   可通过 SRTO_SNDBUF 配置）的消息长度时。
+
+    // 消息模式下，数据长度不能超过发送缓冲区大小
     if (m_config.bMessageAPI && len > int(m_config.iSndBufSize * m_iMaxSRTPayloadSize))
     {
         LOGC(aslog.Error,
@@ -6702,21 +6737,26 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     UniqueLock sendguard(m_SendLock);
 
+    // 发送缓冲区为空时，初始化last ack时间、重传次数
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         // delay the EXP timer to avoid mis-fired timeout
         ScopedLock ack_lock(m_RecvAckLock);
-        m_tsLastRspAckTime = steady_clock::now();
-        m_iReXmitCount   = 1;
+        m_tsLastRspAckTime = steady_clock::now();               // 更新last ack时间
+        m_iReXmitCount   = 1;                                   // 从last ack起的重传次数      
     }
 
     // sndDropTooLate(...) may lock m_RecvAckLock
     // to modify m_pSndBuffer and m_pSndLossList
+
+    // 发送缓冲区中丢弃超时的包
     const int iPktsTLDropped SRT_ATR_UNUSED = sndDropTooLate();
 
     // For MESSAGE API the minimum outgoing buffer space required is
     // the size that can carry over the whole message as passed here.
     // Otherwise it is allowed to send less bytes.
+
+    // 计算需要占用多少个数据块
     const int iNumPktsRequired = m_config.bMessageAPI ? m_pSndBuffer->countNumPacketsRequired(len) : 1;
 
     if (m_bTsbPd && iNumPktsRequired > 1)
@@ -6727,6 +6767,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
+    // 发送缓冲区空间不足
     if (sndBuffersLeft() < iNumPktsRequired)
     {
         //>>We should not get here if SRT_ENABLE_TLPKTDROP
@@ -6738,11 +6779,13 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             // wait here during a blocking sending
             UniqueLock sendblock_lock (m_SendBlockLock);
 
+            // 没有设置超时，一直休眠，等待条件变量sendblock_lock唤醒
             if (m_config.iSndTimeOut < 0)
             {
                 while (stillConnected() && sndBuffersLeft() < iNumPktsRequired && m_bPeerHealth)
                     m_SendBlockCond.wait(sendblock_lock);
             }
+            // 设置了超时时间，带有超时时间的休眠
             else
             {
                 const steady_clock::time_point exptime =
@@ -6758,6 +6801,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         }
 
         // check the connection status
+        // 检查连接状态
         if (m_bBroken || m_bClosing)
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         else if (!m_bConnected)
@@ -6774,6 +6818,12 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
          * we test twice if this code is outside the else section.
          * This fix move it in the else (blocking-mode) section
          */
+        /*
+        * 下面的代码用于在阻塞模式下未能及时获取空闲缓冲区时返回 ETIMEOUT。
+        * 如果在非阻塞模式下没有可用的空闲缓冲区，我们已经返回了。如果有缓冲区可用，
+        * 我们在代码的 else 部分外测试了两次。
+        * 这个修复将其移动到 else（阻塞模式）部分。
+        */
         if (sndBuffersLeft() < iNumPktsRequired)
         {
             if (m_config.iSndTimeOut >= 0)
@@ -6804,6 +6854,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     // If the sender's buffer is empty,
     // record total time used for sending
+    // 第一次开始发送前，记录发送时的时间
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         ScopedLock lock(m_StatsLock);
@@ -6811,6 +6862,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     }
 
     int size = len;
+    // 流式传输
     if (!m_config.bMessageAPI)
     {
         // For STREAM API it's allowed to send less bytes than the given buffer.
@@ -6824,6 +6876,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         ScopedLock recvAckLock(m_RecvAckLock);
         // insert the user buffer into the sending list
 
+        // 即将被调度的序列号
         int32_t seqno = m_iSndNextSeqNo;
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
@@ -6863,6 +6916,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
 
+        // 检查发送时间戳是否正常，时间戳当然要比开启传输时的时间戳大
         if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
         {
             LOGC(aslog.Error,
@@ -6870,6 +6924,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
         }
 
+        // 只有消息传输或开启了TSBPD，才需要关注srctime
         if (w_mctrl.srctime && (!m_config.bMessageAPI || !m_bTsbPd))
         {
             HLOGC(
@@ -6884,6 +6939,8 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
         // We need to supply to the output the value that was STAMPED ON THE PACKET,
         // which is seqno. In the output we'll get the next sequence number.
+
+        // 将数据放入发送缓冲区
         m_pSndBuffer->addBuffer(data, size, (w_mctrl));
         m_iSndNextSeqNo = w_mctrl.pktseq;
         w_mctrl.pktseq = seqno;
@@ -6901,6 +6958,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     // Insert this socket to the snd list if it is not on the list already.
     // m_pSndUList->pop may lock CSndUList::m_ListLock and then m_RecvAckLock
+    // 将当前UDT实例插入到发送列表中
     m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
 
 #ifdef SRT_ENABLE_ECN

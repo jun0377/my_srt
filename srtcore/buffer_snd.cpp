@@ -131,6 +131,7 @@ CSndBuffer::~CSndBuffer()
     releaseMutex(m_BufLock);
 }
 
+// 将数据放入发送缓冲区
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     int32_t& w_msgno     = w_mctrl.msgno;
@@ -566,22 +567,28 @@ void CSndBuffer::ackData(int offset)
     updAvgBufSize(steady_clock::now());
 }
 
+// 发送缓冲区中已使用的数据块数量
 int CSndBuffer::getCurrBufSize() const
 {
     return m_iCount;
 }
 
+// 获取数据包最大长度，不包含包头信息
 int CSndBuffer::getMaxPacketLen() const
 {
     return m_iBlockLen - m_iAuthTagSize;
 }
 
+// 计算iPldLen长度的数据需要占用多少数据块
 int CSndBuffer::countNumPacketsRequired(int iPldLen) const
 {
+    // 获取数据包长度，不包含包头
     const int iPktLen = getMaxPacketLen();
+    // 计算需要占用多少个数据块
     return countNumPacketsRequired(iPldLen, iPktLen);
 }
 
+// 计算需要占用多少个数据块
 int CSndBuffer::countNumPacketsRequired(int iPldLen, int iPktLen) const
 {
     return (iPldLen + iPktLen - 1) / iPktLen;
@@ -634,6 +641,7 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan) const
     return m_iCount;
 }
 
+// 获取发送缓冲区中存储了多长时间的数据
 CSndBuffer::duration CSndBuffer::getBufferingDelay(const time_point& tnow) const
 {
     ScopedLock lck(m_BufLock);
@@ -641,9 +649,11 @@ CSndBuffer::duration CSndBuffer::getBufferingDelay(const time_point& tnow) const
     if (m_iCount == 0)
         return duration(0);
 
+    // 当前时间 - 发送缓冲区中最老数据块的时间
     return tnow - m_pFirstBlock->m_tsOriginTime;
 }
 
+// 丢弃过期数据包
 int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)
 {
     int     dpkts  = 0;
@@ -652,6 +662,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     int32_t msgno  = 0;
 
     ScopedLock bufferguard(m_BufLock);
+    // 遍历发送缓冲区中的数据块，丢弃超时的数据块
     for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++i)
     {
         dpkts++;

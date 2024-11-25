@@ -33,9 +33,12 @@ int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
 // Socket creation.
+// 创建一个SRTSOCKET
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
+// 同样是创建一个SRTSOCKET
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
+// 连接绑定
 #if ENABLE_BONDING
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
@@ -222,6 +225,7 @@ void srt_msgctrl_init(SRT_MSGCTRL* mctrl)
     *mctrl = srt_msgctrl_default;
 }
 
+// 发送数据包，可携带控制信息
 int srt_sendmsg2(SRTSOCKET u, const char * buf, int len, SRT_MSGCTRL *mctrl)
 {
     // Allow NULL mctrl in the API, but not internally.

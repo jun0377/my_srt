@@ -279,8 +279,10 @@ public: // internal API
     // NOTE: Use notation with X*1000*1000*... instead of
     // million zeros in a row.
     static const int       COMM_RESPONSE_MAX_EXP                 = 16;
+    // Too-Late Packet Drop的最小阈值，单位ms
     static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS         = 1000;
     static const uint64_t  COMM_KEEPALIVE_PERIOD_US              = 1*1000*1000;
+    // 同步模式下的发送间隔，单位us
     static const int32_t   COMM_SYN_INTERVAL_US                  = 10*1000;
     static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS = 3000;
     static const uint16_t  MAX_WEIGHT                            = 32767;
@@ -724,6 +726,7 @@ private:
         return double(basebw) * 8.0/1000000.0;
     }
 
+    // 检查连接是否正常
     bool stillConnected()
     {
         // Still connected is when:
@@ -803,8 +806,10 @@ private: // Identification
 #endif
 
 private:
+    // SRT包负载大小，byte
     int                       m_iMaxSRTPayloadSize;     // Maximum/regular payload size, in bytes
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
+    // 对端的用于抵抗突发流的延迟时间，毫秒
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
     SRT_ATTR_PT_GUARDED_BY(m_ConnectionLock)
@@ -831,6 +836,7 @@ private:
     sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
     sync::atomic<bool> m_bBroken;                // If the connection has been broken
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
+    // 对端是否正常
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<int> m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
@@ -868,7 +874,9 @@ private: // Sending related data
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
+    // 流控窗口
     sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
+    // 拥塞控制窗口
     sync::atomic<int> m_iCongestionWindow;       // Congestion window size
 
 private: // Timers
@@ -880,6 +888,7 @@ private: // Timers
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
+    // 从对端接收到最后一次ACK的时间戳
     time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer
     atomic_time_point m_tsLastSndTime;           // Timestamp of last data/ctrl sent (in system ticks)
     time_point m_tsLastWarningTime;              // Last time that a warning message is sent
@@ -910,6 +919,7 @@ private: // Timers
     sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
+    // 即将被调度的序列号
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
@@ -940,11 +950,13 @@ private: // Timers
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
+    // 是否启用发送方延迟数据包丢弃功能; 发送缓冲区中超时未处理的包将被丢弃
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
     bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
+    // 从上次ACK以来，重传的次数
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
     static const size_t
@@ -1030,10 +1042,12 @@ private: // synchronization: mutexes and conditions
     sync::Mutex m_ConnectionLock;                // used to synchronize connection operation
 
     sync::Condition m_SendBlockCond;             // used to block "send" call
+    // 
     sync::Mutex m_SendBlockLock;                 // lock associated to m_SendBlockCond
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
+    // 接收到ACK包时使用的互斥锁
     mutable sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
 
     sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
@@ -1184,6 +1198,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
+        // UDT实例创建时间
         time_point tsStartTime;             // timestamp when the UDT entity is started
         stats::Sender sndr;                 // sender statistics
         stats::Receiver rcvr;               // receiver statistics
@@ -1195,6 +1210,7 @@ private: // Trace
         double traceBelatedTime;
 
         int64_t sndDuration;                // real time for sending
+        // 用于统计发送持续时间
         time_point sndDurationCounter;      // timers to record the sending Duration
 
     } m_stats;

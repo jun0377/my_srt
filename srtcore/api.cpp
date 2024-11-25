@@ -87,8 +87,10 @@ void srt::CUDTSocket::construct()
     m_GroupOf         = NULL;
     m_GroupMemberData = NULL;
 #endif
+    // 接受连接时使用的锁和条件变量
     setupMutex(m_AcceptLock, "Accept");
     setupCond(m_AcceptCond, "Accept");
+    // 控制套接字时使用的锁, listen/bind/connect
     setupMutex(m_ControlLock, "Control");
 }
 
@@ -321,6 +323,7 @@ int srt::CUDTUnited::cleanup()
     return 0;
 }
 
+// 生成一个SRTSOCKET
 SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
 {
     ScopedLock guard(m_IDLock);
@@ -424,6 +427,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
     return sockval;
 }
 
+// 创建一个SRTSOCKET
 SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
 {
     // XXX consider using some replacement of std::unique_ptr
@@ -433,6 +437,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
 
     try
     {
+        // 创建一个UDT套接字
         ns = new CUDTSocket;
     }
     catch (...)
@@ -3955,6 +3960,7 @@ int srt::CUDT::sendmsg(SRTSOCKET u, const char* buf, int len, int ttl, bool inor
     return sendmsg2(u, buf, len, (mctrl));
 }
 
+// 发送数据包，可携带控制信息
 int srt::CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 {
     try

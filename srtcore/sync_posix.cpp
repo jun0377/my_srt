@@ -171,11 +171,13 @@ srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
     return TimePoint<steady_clock>(x);
 }
 
+// 将时间转换为微秒
 int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
 {
     return t.count() / s_clock_ticks_per_us;
 }
 
+// 将时间转换为毫秒
 int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
 {
     return t.count() / s_clock_ticks_per_us / 1000;

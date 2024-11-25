@@ -790,13 +790,21 @@ typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
+   // TTL，毫秒
    int msgttl;           // TTL for a message (millisec), default -1 (no TTL limitation)
+   // 是否允许乱序
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
+   // 数据帧边界标识: 0: 中间包，1: 帧结束，2: 帧结束，3: 帧开始
    int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
+   // 发送时间戳
    int64_t srctime;      // source time since epoch (usec), 0: use internal time (sender)
+   // 接收端收到第一个数据包的序列号
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
+   // 消息号
    int32_t msgno;        // message number (output value for both sending and receiving)
+   // SRTSOCKET套接字组
    SRT_SOCKGROUPDATA* grpdata;
+   // 套接字组大小
    size_t grpdata_size;
 } SRT_MSGCTRL;
 
