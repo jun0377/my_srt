@@ -196,6 +196,7 @@ template <> struct File<Relay> { typedef FileRelay type; };
 template <class Iface>
 Iface* CreateFile(const string& name) { return new typename File<Iface>::type (name); }
 
+// 初始化SRT通用参数: URI/bind/adapter/mode/blocking/timeout
 void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 {
     // Application-specific options: mode, blocking, timeout, adapter
@@ -217,18 +218,21 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             Error("Path specification not supported for SRT (use // in front for special cases)");
         }
 
+        // srt流的URI去掉前缀"//"
         path = path.substr(2);
 
 #if ENABLE_BONDING
         if (path == "group")
         {
             // Group specified, check type.
+            // 开启连接绑定时的组类型
             m_group_type = par["type"];
             if (m_group_type == "")
             {
                 Error("With //group, the group 'type' must be specified.");
             }
 
+            // 按'/'分割字符串，结果存入parts
             vector<string> parts;
             Split(m_group_type, '/', back_inserter(parts));
             if (parts.size() == 0 || parts.size() > 2)
@@ -242,6 +246,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 m_group_config = parts[1];
             }
 
+            // 按','分割字符串，结果存入nodes
             vector<string> nodes;
             Split(par["nodes"], ',', back_inserter(nodes));
 
@@ -362,6 +367,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 #endif
     }
 
+    // bind参数，用于设置本地地址和端口
     if (par.count("bind"))
     {
         string bindspec = par.at("bind");
@@ -380,12 +386,14 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         par.erase("bind");
     }
 
+    // adapter参数，用于设置网络适配器
     string adapter;
     if (par.count("adapter"))
     {
         adapter = par.at("adapter");
     }
 
+    // mode参数，用于设置连接模式: listener/caller/rendezvous
     m_mode = "default";
     if (par.count("mode"))
     {
@@ -397,28 +405,33 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         Error("Invalid mode");
     }
 
+    // 连接绑定只有再caller模式下才有用
     if (!m_group_nodes.empty() && mode != SocketOption::CALLER)
     {
         Error("Group node specification is only available in caller mode");
     }
 
     // Fix the mode name after successful interpretation
+    // 修正连接模式
     m_mode = SocketOption::mode_names[mode];
 
     par.erase("mode");
 
+    // 同步/异步模式
     if (par.count("blocking"))
     {
         m_blocking_mode = !false_names.count(par.at("blocking"));
         par.erase("blocking");
     }
 
+    // 异步模式下的发送/接收超时
     if (par.count("timeout"))
     {
         m_timeout = stoi(par.at("timeout"), 0, 0);
         par.erase("timeout");
     }
 
+    // 网络适配器
     if (par.count("adapter"))
     {
         m_adapter = adapter;
@@ -431,11 +444,13 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         m_adapter = host;
     }
 
+    // 是否开启基于时间戳的数据包传递模式
     if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
     }
 
+    // 输出端口
     if (par.count("port"))
     {
         m_outgoing_port = stoi(par.at("port"), 0, 0);
@@ -444,6 +459,8 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     // That's kinda clumsy, but it must rely on the defaults.
     // Default mode is live, so check if the file mode was enforced
+
+    // 传输类型 - 文件传输/实时传输
     if (par.count("transtype") == 0 || par["transtype"] != "file")
     {
         // If the Live chunk size was nondefault, enforce the size.
@@ -458,6 +475,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     // Assigning group configuration from a special "groupconfig" attribute.
     // This is the only way how you can set up this configuration at the listener side.
+    // 组配置
     if (par.count("groupconfig"))
     {
         m_group_config = par.at("groupconfig");
@@ -465,6 +483,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
     }
 
     // Fix Minversion, if specified as string
+    // SRT版本检查
     if (par.count("minversion"))
     {
         string v = par["minversion"];
@@ -667,9 +686,12 @@ static string PrintEpollEvent(int events, int et_events)
     return os.str();
 }
 
+// 初始化SRT流: 
 void SrtCommon::Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir)
 {
+    // 是输入流还是输出流
     m_direction = dir;
+    // 
     InitParameters(host, path, par);
 
     int backlog = 1;

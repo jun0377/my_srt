@@ -70,6 +70,7 @@ public:
     };
 };
 
+// 抽象类 - 媒体流的目的
 class Target: public virtual Location
 {
 public:

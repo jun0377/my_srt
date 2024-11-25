@@ -28,9 +28,12 @@ extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
 
+// 媒体数据包
 struct MediaPacket
 {
+    // 负载数据
     bytevector payload;
+    // 接收到该包时的时间戳
     int64_t time = 0;
 
     MediaPacket(bytevector&& src) : payload(std::move(src)) {}
@@ -92,7 +95,7 @@ class Target: public Location
 public:
     // 向目的写入指定大小的数据
     virtual int  Write(const char* data, size_t size, int64_t src_time, std::ostream &out_stats = std::cout) = 0;
-    // 目标是否已经被打开
+    // 目标是否已经被打开;对于SRT来说，就是检查SRTSOCKET是否可用
     virtual bool IsOpen() = 0;
     // 与目标的连接是否异常
     virtual bool Broken() = 0;

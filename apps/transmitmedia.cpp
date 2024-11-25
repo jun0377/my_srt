@@ -43,7 +43,9 @@ using namespace srt;
 // SRT状态是否输出到标准输出
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
+// 用于控制带宽报告频率
 unsigned long transmit_bw_report = 0;
+// 用于控制状态统计频率
 unsigned long transmit_stats_report = 0;
 // 传输时的数据块大小
 unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
@@ -281,11 +283,13 @@ void SrtCommon::StealFrom(SrtCommon& src)
     src.m_sock = SRT_INVALID_SOCK; // STEALING
 }
 
+// 接受一个新的客户端连接
 bool SrtCommon::AcceptNewClient()
 {
     sockaddr_any scl;
-    Verb() << " accept... ";
+    Verb() << "transmitmedia.cpp->SrtCommon::AcceptNewClient accept... ";
 
+    // 接受一个新的客户端连接
     m_sock = srt_accept(m_bindsock, scl.get(), &scl.len);
     if ( m_sock == SRT_INVALID_SOCK )
     {
@@ -296,13 +300,17 @@ bool SrtCommon::AcceptNewClient()
 
     // we do one client connection at a time,
     // so close the listener.
+
+    // 每次只接受一个连接，因此关闭监听套接字
     srt_close(m_bindsock);
     m_bindsock = SRT_INVALID_SOCK;
 
-    Verb() << " connected.";
+    Verb() << "transmitmedia.cpp->SrtCommon::AcceptNewClient connected.";
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
+
+    // 建立SRT连接后需要配置的SRTSOCKET选项: 异步模式/超时时间...
     int stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePost");
@@ -601,13 +609,17 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
     hostport_copy = os.str();
 }
 
+// 从SRT流中读数据，读取固定大小的数据保存到pkt中，在此过程中会进行带宽和状态统计
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
 {
+    // 用于控制带宽报告和状态统计的频率
     static unsigned long counter = 1;
 
+    // 确保有足够的空间来保存一个包
     if (pkt.payload.size() < chunk)
         pkt.payload.resize(chunk);
 
+    // SRT控制报文
     SRT_MSGCTRL ctrl;
     const int stat = srt_recvmsg2(m_sock, pkt.payload.data(), (int) chunk, &ctrl);
     if (stat <= 0)
@@ -618,13 +630,17 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
 
     pkt.time = ctrl.srctime;
 
+    // 调整缓冲区大小为实际读取到的数据大小，优化内存使用
     chunk = size_t(stat);
     if (chunk < pkt.payload.size())
         pkt.payload.resize(chunk);
 
+    // 带宽报告频率
     const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    // 状态统计频率
     const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
 
+    // SRT性能探测
     if (need_bw_report || need_stats_report)
     {
         CBytePerfMon perf;
@@ -641,6 +657,7 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     return stat;
 }
 
+// SRT目的建立连接前的配置: TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
 int SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
     int result = SrtCommon::ConfigurePre(sock);
@@ -652,6 +669,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     // (min. version 1.2.1), then this setting simply does nothing.
     // In HSv4 this setting is obligatory; otherwise the SRT handshake
     // extension will not be done at all.
+    // 发送者模式，用于加密和TSBPD握手
     result = srt_setsockopt(sock, 0, SRTO_SENDER, &yes, sizeof yes);
     if ( result == -1 )
         return result;
@@ -659,21 +677,29 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
+// 向SRT目标写数据，在此过程中会进行带宽和状态统计
 int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &out_stats)
 {
+    // 用于控制带宽报告和状态统计的频率
     static unsigned long counter = 1;
 
+    // SRT控制报文
     SRT_MSGCTRL ctrl = srt_msgctrl_default;
     ctrl.srctime = src_time;
+
+    // 发送数据
     int stat = srt_sendmsg2(m_sock, data, (int) size, &ctrl);
     if (stat == SRT_ERROR)
     {
         return stat;
     }
 
+    // 带宽报告频率
     const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
+    // 状态统计频率
     const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
 
+    // SRT性能探测
     if (need_bw_report || need_stats_report)
     {
         CBytePerfMon perf;

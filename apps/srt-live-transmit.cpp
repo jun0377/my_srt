@@ -938,7 +938,7 @@ int main(int argc, char** argv)
                         // 从源读取指定大小地数据，保存到pkt
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
-                        // SRT源读取失败
+                        // 源是一个SRT流，读取失败的情况
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
                             // 非阻塞模式下，读数据失败；如接收缓冲区已满

@@ -96,16 +96,25 @@ protected:
 
     int srt_epoll = -1;
     SRT_EPOLL_T m_direction = SRT_EPOLL_OPT_NONE; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
-   // 是否使用同步发送/接收,即阻塞模式，默认开启
+    // 是否使用同步发送/接收,即阻塞模式，默认开启
     bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_direction
+    // 异步模式下的发送/接收超时时间
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_direction
+    // 是否开启基于时间戳的数据包传递模式
     bool m_tsbpdmode = true;
+    // 输出端口
     int m_outgoing_port = 0;
+    // 连接模式: listener/caller/rendezvous
     std::string m_mode;
+    // 网络适配器
     std::string m_adapter;
+    // URI中提供的其它选项
     std::map<std::string, std::string> m_options; // All other options, as provided in the URI
+    // 连接绑定时的节点列表
     std::vector<Connection> m_group_nodes;
+    // 开启连接绑定时的组类型
     std::string m_group_type;
+    // 开启连接绑定时的组配置
     std::string m_group_config;
 #if ENABLE_BONDING
     std::vector<SRT_SOCKGROUPDATA> m_group_data;
@@ -122,7 +131,9 @@ protected:
 #endif
 #endif
 
+    // SRT套接字
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
+    // SRT bind套接字
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
     bool m_listener_group = false;
     // 判断SRTSOCKET是否可用
@@ -223,6 +234,7 @@ public:
     void Close() override { return SrtCommon::Close(); }
 };
 
+// SRT流的目的
 class SrtTarget: public virtual Target, public virtual SrtCommon
 {
 public:

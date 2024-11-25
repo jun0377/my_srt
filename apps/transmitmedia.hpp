@@ -67,7 +67,7 @@ public:
     void PrepareListener(string host, int port, int backlog);
     // 从其他SRTCmmon对象中获取资源
     void StealFrom(SrtCommon& src);
-    // 是否接受新的客户端连接
+    // 接受一个新的客户端连接，连接成功返回true
     bool AcceptNewClient();
 
     // 获取SRTSOCKET
@@ -124,6 +124,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
+    // 从SRT流中读数据，读取固定大小的数据保存到pkt中，在此过程中会进行带宽和状态统计
     int Read(size_t chunk, MediaPacket& pkt, ostream& out_stats = cout) override;
 
     /*
@@ -138,9 +139,12 @@ public:
     }
     */
 
+    // SRT套接字是否可用
     bool IsOpen() override { return IsUsable(); }
+    // SRT流是否结束
     bool End() override { return IsBroken(); }
 
+    // 获取SRT套接字
     SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
@@ -149,13 +153,16 @@ public:
         return socket;
     }
 
+    // 接受一个新的客户端连接
     bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
+// SRT目的
 class SrtTarget: public Target, public SrtCommon
 {
 public:
 
+    // 初始化: 创建一个listener或caller
     SrtTarget(std::string host, int port, const std::map<std::string,std::string>& par)
     {
         Init(host, port, par, true);
@@ -163,11 +170,16 @@ public:
 
     SrtTarget() {}
 
+    // 建立连接前的配置: TSBPD模式/同步接收模式/连接模式/网络适配器设置/延迟关闭...
     int ConfigurePre(SRTSOCKET sock) override;
+    // 向目标写数据，在此过程中会进行带宽和状态统计
     int Write(const char* data, size_t size, int64_t src_time, ostream &out_stats = cout) override;
+    // SRT套接字是否可用
     bool IsOpen() override { return IsUsable(); }
+    // SRT连接是否异常
     bool Broken() override { return IsBroken(); }
 
+    // 获取发送缓冲区中尚未发送的数据量
     size_t Still() override
     {
         size_t bytes;
@@ -177,6 +189,7 @@ public:
         return bytes;
     }
 
+    // 获取SRT套接字
     SRTSOCKET GetSRTSocket() const override
     { 
         SRTSOCKET socket = SrtCommon::Socket();
@@ -184,6 +197,8 @@ public:
             socket = SrtCommon::Listener();
         return socket;
     }
+
+    // 接受一个新的客户端连接
     bool AcceptNewClient() override { return SrtCommon::AcceptNewClient(); }
 };
 
