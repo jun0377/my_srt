@@ -815,6 +815,7 @@ static const int32_t SRT_SEQNO_NONE = -1;    // -1: no seq (0 is a valid seqno!)
 static const int32_t SRT_MSGNO_NONE = -1;    // -1: unset
 static const int32_t SRT_MSGNO_CONTROL = 0;  //  0: control (used by packet filter)
 
+// TTL设置为无限大
 static const int SRT_MSGTTL_INF = -1; // unlimited TTL specification for message TTL
 
 // XXX Might be useful also other special uses of -1:

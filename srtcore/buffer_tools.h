@@ -100,6 +100,7 @@ public:
     uint64_t getInRatePeriod() const { return m_InRatePeriod; }
 
     /// Retrieve input bitrate in bytes per second
+    // 获取输入码率：Bytes/s
     int getInputRate() const { return m_iInRateBps; }
 
     void setInputRateSmpPeriod(int period);
@@ -110,6 +111,7 @@ public:
     /// @param [in] bytes  number of payload bytes in those newly added packets
     void updateInputRate(const time_point& time, int pkts = 0, int bytes = 0);
 
+    // 重置输入码率的统计周期
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
 private:                                                       // Constants
@@ -122,6 +124,7 @@ private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
     int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime.
     time_point m_tsInRateStartTime;
+    // 输入码率计算周期
     uint64_t   m_InRatePeriod; // usec
     int        m_iInRateBps;   // Input Rate in Bytes/sec
     int        m_iFullHeaderSize;

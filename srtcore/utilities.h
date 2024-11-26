@@ -334,6 +334,7 @@ struct Bits
     /// returns a whole 32-bit word that has the value already at specified place.
     /// To create a 32-bit container that contains already all values destined for different
     /// bit ranges, simply use wrap() for each of them and bind them with | operator.
+    // 设置uint32_t的某些位，并将其它位设置为0
     static uint32_t wrap(uint32_t baseval) { return (baseval << offset) & mask; }
 
     /// Extracts appropriate bit range and returns them as normal integer value.

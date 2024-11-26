@@ -251,10 +251,14 @@ void CPacket::setLength(size_t len)
     m_PacketVector[PV_DATA].setLength(len);
 }
 
+// 设置数据包长度
 void CPacket::setLength(size_t len, size_t cap)
 {
+    // 数据包长度不能超过容量限制
    SRT_ASSERT(len <= cap);
+   // 设置数据包长度
    setLength(len);
+   // 更新数据包容量
    m_zCapacity = cap;
 }
 

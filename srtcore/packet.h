@@ -127,9 +127,13 @@ public:
 /// To define packets in order in the buffer. This is public due to being used in buffer.
 enum PacketBoundary
 {
+    // 当前消息的中间数据块
     PB_SUBSEQUENT = 0, // 00: a packet in the middle of a message, neither the first, not the last.
+    // 当前消息的最后一个数据块
     PB_LAST       = 1, // 01: last packet of a message
+    // 当前消息的第一个数据块
     PB_FIRST      = 2, // 10: first packet of a message
+    // 当前消息只有一个数据块
     PB_SOLO       = 3, // 11: solo message packet
 };
 
@@ -349,6 +353,7 @@ protected:
     int32_t m_extra_pad;
     bool    m_data_owned;
     sockaddr_any m_DestAddr;
+    // 数据包容量
     size_t  m_zCapacity;
 
 protected:

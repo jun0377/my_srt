@@ -76,11 +76,14 @@ bool AvgBufSize::isTimeToUpdate(const time_point& now) const
     return (elapsed_ms >= msMAvgPeriod);
 }
 
+// 更新发送缓冲区的平均大小
 void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes, int timespan_ms)
 {
+    // 上次统计到当前的时间跨度
     const uint64_t elapsed_ms       = count_milliseconds(now - m_tsLastSamplingTime); // ms since last sampling
     m_tsLastSamplingTime            = now;
     const uint64_t one_second_in_ms = 1000;
+    // 在过去的1秒内没有更新，重新初始化平均值
     if (elapsed_ms > one_second_in_ms)
     {
         // No sampling in last 1 sec, initialize average
@@ -97,6 +100,8 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     //   +----------------------------------+-------+
     //  -1                                 LST      0(now)
     //
+
+    // 加权平均值
     m_dCountMAvg      = avg_iir_w<1000, double>(m_dCountMAvg, pkts, elapsed_ms);
     m_dBytesCountMAvg = avg_iir_w<1000, double>(m_dBytesCountMAvg, bytes, elapsed_ms);
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);

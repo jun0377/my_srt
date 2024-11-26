@@ -64,6 +64,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace sync;
 
+// 发送缓冲区构造函数: 申请堆空间/堆空间按块划分/初始化锁
 CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     : m_BufLock()
     , m_pBlock(NULL)
@@ -80,8 +81,10 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     , m_rateEstimator(ip_family)
 {
     // initial physical buffer of "size"
+    // 堆内存
     m_pBuffer           = new Buffer;
     m_pBuffer->m_pcData = new char[m_iSize * m_iBlockLen];
+    // 数据块数量
     m_pBuffer->m_iSize  = m_iSize;
     m_pBuffer->m_pNext  = NULL;
 
@@ -90,6 +93,7 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     Block* pb = m_pBlock;
     char* pc  = m_pBuffer->m_pcData;
 
+    // 发送缓冲区按块进行划分
     for (int i = 0; i < m_iSize; ++i)
     {
         pb->m_iMsgNoBitset = 0;
@@ -106,6 +110,7 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
 
     m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
 
+    // 初始化锁
     setupMutex(m_BufLock, "Buf");
 }
 
@@ -139,27 +144,31 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int64_t& w_srctime   = w_mctrl.srctime;
     const int& ttl       = w_mctrl.msgttl;
     const int iPktLen    = getMaxPacketLen();
+    // 计算需要占用多少个数据块
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
-    HLOGC(bslog.Debug,
-          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
+    HLOGC(bslog.Debug, log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
     // Retrieve current time before locking the mutex to be closer to packet submission event.
     const steady_clock::time_point tnow = steady_clock::now();
 
     ScopedLock bufferguard(m_BufLock);
     // Dynamically increase sender buffer if there is not enough room.
+
+    // 发送缓冲区空间不足，扩容之
     while (iNumBlocks + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug, log << "addBuffer: ... still lacking " << (iNumBlocks + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
+    // 乱序 ?
     const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
     HLOGC(bslog.Debug,
           log << CONID() << "addBuffer: adding " << iNumBlocks << " packets (" << len << " bytes) to send, msgno="
               << (w_msgno > 0 ? w_msgno : m_iNextMsgNo) << (inorder ? "" : " NOT") << " in order");
 
     // Calculate origin time (same for all blocks of the message).
+    // 原始时间: 如果用户没有指定的话，就表示数据块被放入发送缓冲区的时间
     m_tsLastOriginTime = w_srctime ? time_point() + microseconds_from(w_srctime) : tnow;
     // Rewrite back the actual value, even if it stays the same, so that the calling facilities can reuse it.
     // May also be a subject to conversion error, thus the actual value is signalled back.
@@ -170,21 +179,29 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // If there's more than one packet, this function must increase it by itself
     // and then return the accordingly modified sequence number in the reference.
 
+    // 传递给这个函数的序列号是该数据包系列中第一个数据包应该获得的序列号。
+    // 如果有多个数据包，这个函数必须自行增加序列号，
+    // 然后在引用中返回相应修改后的序列号。
+
     Block* s = m_pLastBlock;
 
+    // 没有指定消息号，则使用内部管理的消息号
     if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
         HLOGC(bslog.Debug, log << "addBuffer: using internally managed msgno=" << m_iNextMsgNo);
         w_msgno = m_iNextMsgNo;
     }
+    // 指定了消息号，更新之
     else
     {
         HLOGC(bslog.Debug, log << "addBuffer: OVERWRITTEN by msgno supplied by caller: msgno=" << w_msgno);
         m_iNextMsgNo = w_msgno;
     }
 
+    // 将数据放入对应的数据块中，即：将数据放入发送缓冲区中
     for (int i = 0; i < iNumBlocks; ++i)
     {
+        // 剩余数据长度,单位: byte
         int pktlen = len - i * iPktLen;
         if (pktlen > iPktLen)
             pktlen = iPktLen;
@@ -192,15 +209,22 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(bslog.Debug,
               log << "addBuffer: %" << w_seqno << " #" << w_msgno << " offset=" << (i * iPktLen)
                   << " size=" << pktlen << " TO BUFFER:" << (void*)s->m_pcData);
+
+        // 将数据拷贝到数据块中,至此才真正将数据放入到发送缓冲区了
         memcpy((s->m_pcData), data + i * iPktLen, pktlen);
+        // 更新有效数据的长度
         s->m_iLength = pktlen;
 
+        // 更新序列号
         s->m_iSeqNo = w_seqno;
         w_seqno     = CSeqNo::incseq(w_seqno);
 
+        // 是否支持乱序
         s->m_iMsgNoBitset = m_iNextMsgNo | inorder;
+        // i == 0, 说明是第一个数据块，设置标识
         if (i == 0)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_FIRST);
+        // 最后一个数据块，设置标识
         if (i == iNumBlocks - 1)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_LAST);
         // NOTE: if i is neither 0 nor size-1, it resuls with PB_SUBSEQUENT.
@@ -216,6 +240,8 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         
         // Should never happen, as the call to increase() should ensure enough buffers.
         SRT_ASSERT(s->m_pNext);
+
+        // 下一个数据块
         s = s->m_pNext;
     }
     m_pLastBlock = s;
@@ -223,7 +249,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     m_iCount = m_iCount + iNumBlocks;
     m_iBytesCount += len;
 
+    // 计算输入码率
     m_rateEstimator.updateInputRate(m_tsLastOriginTime, iNumBlocks, len);
+    // 更新发送缓冲区平均大小
     updAvgBufSize(m_tsLastOriginTime);
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -232,14 +260,18 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // maximum value has been reached. Casting to int32_t to ensure the same sign
     // in comparison, although it's far from reaching the sign bit.
 
+    // 更新预期的消息号
     const int nextmsgno = ++MsgNo(m_iNextMsgNo);
     HLOGC(bslog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
     m_iNextMsgNo = nextmsgno;
 }
 
+// 从文件中读取数据并添加到发送缓冲区
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 {
+    // 单个数据块的容量
     const int iPktLen    = getMaxPacketLen();
+    // 需要占用多少个数据块
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
@@ -247,6 +279,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
+    // 发送缓冲区空间不足，扩容之
     while (iNumBlocks + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug,
@@ -265,6 +298,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
         if (ifs.bad() || ifs.fail() || ifs.eof())
             break;
 
+        // 剩余数据长度,单位: byte
         int pktlen = len - i * iPktLen;
         if (pktlen > iPktLen)
             pktlen = iPktLen;
@@ -272,21 +306,26 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
         HLOGC(bslog.Debug,
               log << "addBufferFromFile: reading from=" << (i * iPktLen) << " size=" << pktlen
                   << " TO BUFFER:" << (void*)s->m_pcData);
+        
+        // 从文件中读数据，直接读取到数据块中
         ifs.read(s->m_pcData, pktlen);
         if ((pktlen = int(ifs.gcount())) <= 0)
             break;
 
         // currently file transfer is only available in streaming mode, message is always in order, ttl = infinite
+        // 文件传输仅在流模式下可用，消息总是有序的，TTL无限大
         s->m_iMsgNoBitset = m_iNextMsgNo | MSGNO_PACKET_INORDER::mask;
+        // i == 0, 说明是第一个数据块，设置标识
         if (i == 0)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_FIRST);
+        // 最后一个数据块，设置标识
         if (i == iNumBlocks - 1)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_LAST);
         // NOTE: PB_FIRST | PB_LAST == PB_SOLO.
         // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
 
         s->m_iLength = pktlen;
-        s->m_iTTL    = SRT_MSGTTL_INF;
+        s->m_iTTL    = SRT_MSGTTL_INF;      // TTL设置为无限大
         s            = s->m_pNext;
 
         total += pktlen;
@@ -306,6 +345,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
+// 从发送缓冲区中读取数据，跳过超时的数据
 int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
     int readlen = 0;
@@ -316,8 +356,11 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     {
         // Make the packet REFLECT the data stored in the buffer.
         w_packet.m_pcData = m_pCurrBlock->m_pcData;
+        // 当前数据块中有效数据的长度
         readlen = m_pCurrBlock->m_iLength;
+        // 设置数据包长度和容量，数据包的容量为发送缓冲区中数据块的大小，数据包的长度为当前数据块中有效数据的长度
         w_packet.setLength(readlen, m_iBlockLen);
+        // 设置序列号
         w_packet.set_seqno(m_pCurrBlock->m_iSeqNo);
 
         // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
@@ -348,6 +391,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
 
+        // 发送缓冲区中的数据超时，跳过该数据块
         if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - w_srctime) > p->m_iTTL))
         {
             LOGC(bslog.Warn, log << CONID() << "CSndBuffer: skipping packet %" << p->m_iSeqNo << " #" << p->getMsgSeq() << " with TTL=" << p->m_iTTL);
@@ -368,6 +412,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     return readlen;
 }
 
+// 获取下一个要发送数据块的原始时间戳
 CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
 {
     ScopedLock bufferguard(m_BufLock);
@@ -377,6 +422,7 @@ CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
     return m_pCurrBlock->m_tsOriginTime;
 }
 
+// 获取指定位置处数据块的消息号
 int32_t CSndBuffer::getMsgNoAt(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -390,6 +436,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
                   << p->getMsgSeq() << " !" << BufferStamp(p->m_pcData, p->m_iLength));
     }
 
+    // 偏移量超出范围
     if (offset >= m_iCount)
     {
         // Prevent accessing the last "marker" block
@@ -423,6 +470,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
+// 从发送缓冲区的指定位置开始读取数据，并检查数据块是否过期
 int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     // NOTE: w_packet.m_iSeqNo is expected to be set to the value
@@ -434,10 +482,14 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
+
+    // 偏移
     for (int i = 0; i < offset && p != m_pLastBlock; ++i)
     {
         p = p->m_pNext;
     }
+
+    // 偏移量超出范围
     if (p == m_pLastBlock)
     {
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
@@ -467,12 +519,14 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // (This is for messages that have declared TTL - messages that fail to be sent
     // before the TTL defined time comes, will be dropped).
 
+    // 但凡有一个数据块过期，则认为这个数据块对应的整个消息都过期了
     if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
     {
         w_drop.msgno = p->getMsgSeq();
         int msglen   = 1;
         p            = p->m_pNext;
         bool move    = false;
+        // 遍历数据块，直到找到下一个消息号不同的数据块
         while (p != m_pLastBlock && w_drop.msgno == p->getMsgSeq())
         {
 #if ENABLE_HEAVY_LOGGING
@@ -494,6 +548,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // to simply take the sequence number from the block. But this is a new
         // feature and should be only used after refax for the sender buffer to
         // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
+
+        // 丢包范围
         w_drop.seqno[DropRange::BEGIN] = w_packet.seqno();
         w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.seqno(), msglen - 1);
 
@@ -521,6 +577,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     // This function is called when packet retransmission is triggered.
     // Therefore we are setting the rexmit time.
+    // 当触发数据包重传时使用的计时器，设置重传超时
     p->m_tsRexmitTime = steady_clock::now();
 
     HLOGC(qslog.Debug,
@@ -530,6 +587,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     return readlen;
 }
 
+// 获取指定地址处的数据包重传时间戳
 sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -547,11 +605,13 @@ sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
     return p->m_tsRexmitTime;
 }
 
+// ACK确认，从发送缓冲区中移除已被确认的数据
 void CSndBuffer::ackData(int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
     bool move = false;
+    // 移除已被确认的数据
     for (int i = 0; i < offset; ++i)
     {
         m_iBytesCount -= m_pFirstBlock->m_iLength;
@@ -562,8 +622,10 @@ void CSndBuffer::ackData(int offset)
     if (move)
         m_pCurrBlock = m_pFirstBlock;
 
+    // 更新已使用数据块数量
     m_iCount = m_iCount - offset;
 
+    // 更新发送缓冲区平均大小
     updAvgBufSize(steady_clock::now());
 }
 
@@ -617,6 +679,7 @@ int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
     return round_val(m_mavg.pkts());
 }
 
+// 更新发送缓冲区平均大小
 void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
 {
     if (!m_mavg.isTimeToUpdate(now))
@@ -624,10 +687,13 @@ void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
 
     int       bytes       = 0;
     int       timespan_ms = 0;
+    // 获取发送缓冲区中的字节数和时间跨度
     const int pkts        = getCurrBufSize((bytes), (timespan_ms));
+    // 更新发送缓冲区平均大小
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
 
+// 获取发送缓冲区中已使用的数据块数量，并通过引用参数返回发送缓冲区字节数和发送缓冲区中数据的时间跨度
 int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan) const
 {
     w_bytes = m_iBytesCount;
@@ -636,6 +702,12 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan) const
      * Also, if there is only one pkt in buffer, the time difference will be 0.
      * Therefore, always add 1 ms if not empty.
      */
+     /*
+     * 如果数据包很少，时间跨度可能小于 1000 微秒（1 毫秒）。
+     * 此外，如果缓冲区中只有一个数据包，时间差将为 0。
+     * 因此，如果不为空，总是加上 1 毫秒。
+     */
+    // 发送缓冲区中数据的时间跨度
     w_timespan = 0 < m_iCount ? (int) count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
 
     return m_iCount;
@@ -693,11 +765,14 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     return (dpkts);
 }
 
+// 发送缓冲区扩容，每次扩容 m_iSize 个数据块大小，即(m_iSize * m_iBlockLen) 字节
 void CSndBuffer::increase()
 {
+    // 发送缓冲区容量：数据块
     int unitsize = m_pBuffer->m_iSize;
 
     // new physical buffer
+    // 申请堆空间
     Buffer* nbuf = NULL;
     try
     {
@@ -713,12 +788,14 @@ void CSndBuffer::increase()
     nbuf->m_pNext = NULL;
 
     // insert the buffer at the end of the buffer list
+    // 将新申请的堆空间插入到发送缓冲区链表的末尾
     Buffer* p = m_pBuffer;
     while (p->m_pNext != NULL)
         p = p->m_pNext;
     p->m_pNext = nbuf;
 
     // new packet blocks
+    // 数据块
     Block* nblk = NULL;
     try
     {
@@ -740,6 +817,7 @@ void CSndBuffer::increase()
     pb->m_pNext           = m_pLastBlock->m_pNext;
     m_pLastBlock->m_pNext = nblk;
 
+    // 将新申请的堆空间也按块进行划分
     pb       = nblk;
     char* pc = nbuf->m_pcData;
     for (int i = 0; i < unitsize; ++i)
@@ -749,6 +827,7 @@ void CSndBuffer::increase()
         pc += m_iBlockLen;
     }
 
+    // 更新发送缓冲区容量
     m_iSize += unitsize;
 
     HLOGC(bslog.Debug,
