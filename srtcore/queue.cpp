@@ -65,6 +65,7 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
+// 初始化接收缓冲区,初始大小为initNumUnits个单元，每个单元mss字节
 srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)
     , m_iMSS(mss)
@@ -101,6 +102,7 @@ srt::CUnitQueue::~CUnitQueue()
     }
 }
 
+// 申请一个新的数据单元队列，队列容量为iNumUnits个单元，每个单元mss字节
 srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, const int mss)
 {
     CQEntry* tempq = NULL;
@@ -136,15 +138,18 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
     return tempq;
 }
 
+// 增加接收缓冲区容量，增加一个数据单元队列的容量
 int srt::CUnitQueue::increase_()
 {
     const int numUnits = m_iBlockSize;
     HLOGC(qrlog.Debug, log << "CUnitQueue::increase: Capacity" << capacity() << " + " << numUnits << " new units, " << m_iNumTaken << " in use.");
 
+    // 申请一个新的数据单元队列，队列容量为iNumUnits个单元，每个单元mss字节
     CQEntry* tempq = allocateEntry(numUnits, m_iMSS);
     if (tempq == NULL)
         return -1;
 
+    // 将新申请的数据单元队列添加到接收缓冲区末尾
     m_pLastQueue->m_pNext = tempq;
     m_pLastQueue          = tempq;
     m_pLastQueue->m_pNext = m_pQEntry;
@@ -154,18 +159,24 @@ int srt::CUnitQueue::increase_()
     return 0;
 }
 
+// 获取一个空闲的数据单元
 srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
 {
+    // 接收缓冲区使用率超过了90%，扩容之
     const int iNumUnitsTotal = capacity();
     if (m_iNumTaken * 10 > iNumUnitsTotal * 9) // 90% or more are in use.
         increase_();
 
+    // 接收缓冲区已满，无法获取空闲数据单元
     if (m_iNumTaken >= capacity())
     {
         LOGC(qrlog.Error, log << "CUnitQueue: No free units to take. Capacity" << capacity() << ".");
         return NULL;
     }
 
+    // 到这里说明发送缓冲区中必然还是空闲空间 
+
+    // 遍历，获取空闲单元
     int units_checked = 0;
     do
     {
@@ -185,6 +196,7 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
     return NULL;
 }
 
+// 释放一个数据单元
 void srt::CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
@@ -194,6 +206,7 @@ void srt::CUnitQueue::makeUnitFree(CUnit* unit)
     --m_iNumTaken;
 }
 
+// 占用一个数据单元
 void srt::CUnitQueue::makeUnitTaken(CUnit* unit)
 {
     ++m_iNumTaken;
@@ -709,7 +722,6 @@ void srt::CRcvUList::update(const CUDT* u)
     m_pLast          = n;
 }
 
-//
 srt::CHash::CHash()
     : m_pBucket(NULL)
     , m_iHashSize(0)
@@ -742,6 +754,7 @@ void srt::CHash::init(int size)
     m_iHashSize = size;
 }
 
+// 根据socket ID来查找UDT实例
 srt::CUDT* srt::CHash::lookup(int32_t id)
 {
     // simple hash function (% hash table size); suitable for socket descriptors
@@ -1198,21 +1211,30 @@ srt::CRcvQueue::~CRcvQueue()
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
+// 初始化接收队列
 void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
 {
+    // IPv4/IPv6
     m_iIPversion    = version;
+    // 包负载大小
     m_szPayloadSize = payload;
 
+    // 初始化接收缓冲区,初始大小为initNumUnits个单元，每个单元mss字节
     SRT_ASSERT(m_pUnitQueue == NULL);
     m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
 
+    // 初始化哈希表,初始大小为hsize
     m_pHash = new CHash;
     m_pHash->init(hsize);
 
+    // 物理UDP通道
     m_pChannel = cc;
+    // 定时器
     m_pTimer   = t;
 
+    // UDT实例列表
     m_pRcvUList        = new CRcvUList;
+    // 交会连接模式
     m_pRendezvousQueue = new CRendezvousQueue;
 
 #if ENABLE_LOGGING
@@ -1222,18 +1244,21 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     const std::string thrname = "SRT:RcvQ:w";
 #endif
 
+    // 启动接收线程
     if (!StartThread(m_WorkerThread, CRcvQueue::worker, this, thrname.c_str()))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
 
+// 数据接收线程
 void* srt::CRcvQueue::worker(void* param)
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     sockaddr_any sa(self->getIPversion());
     int32_t      id = 0;
 
+    // 线程名称
     std::string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
@@ -1243,11 +1268,16 @@ void* srt::CRcvQueue::worker(void* param)
     while (!self->m_bClosing)
     {
         bool        have_received = false;
+
+        // 从接收缓冲区中获取一个空闲的数据单元，并接收一个包
         EReadStatus rst           = self->worker_RetrieveUnit((id), (unit), (sa));
 
         INCREMENT_THREAD_ITERATIONS();
+
+        // 接收成功
         if (rst == RST_OK)
         {
+            // id < 0, 错误报文
             if (id < 0)
             {
                 // User error on peer. May log something, but generally can only ignore it.
@@ -1265,11 +1295,14 @@ void* srt::CRcvQueue::worker(void* param)
             // Note to rendezvous connection. This can accept:
             // - ID == 0 - take the first waiting rendezvous socket
             // - ID > 0  - find the rendezvous socket that has this ID.
+
+            // id == 0, 说明是连接阶段的报文
             if (id == 0)
             {
                 // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
                 cst = self->worker_ProcessConnectionRequest(unit, sa);
             }
+            // 数据包 ? 
             else
             {
                 // Otherwise ID is expected to be associated with:
@@ -1279,13 +1312,17 @@ void* srt::CRcvQueue::worker(void* param)
                 // CAN RETURN CONN_REJECT, but m_RejectReason is already set
             }
             HLOGC(qrlog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
+            
+            // 包处理失败，再试一次
             if (cst == CONN_AGAIN)
             {
                 HLOGC(qrlog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
                 continue;
             }
+
             have_received = true;
         }
+        // 接收失败
         else if (rst == RST_ERROR)
         {
             // According to the description by CChannel::recvfrom, this can be either of:
@@ -1314,15 +1351,19 @@ void* srt::CRcvQueue::worker(void* param)
             steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
         CRNode* ul = self->m_pRcvUList->m_pUList;
+
+        // 检查UDT实例列表中的各个节点
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
         {
             CUDT* u = ul->m_pUDT;
 
+            // 连接正常，定时器检查，更新接收列表
             if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
             {
                 u->checkTimers();
                 self->m_pRcvUList->update(u);
             }
+            // 连接异常，删除之
             else
             {
                 HLOGC(qrlog.Debug,
@@ -1336,6 +1377,7 @@ void* srt::CRcvQueue::worker(void* param)
             ul = self->m_pRcvUList->m_pUList;
         }
 
+        // 成功接收到数据，输出一下日志
         if (have_received)
         {
             HLOGC(qrlog.Debug,
@@ -1349,6 +1391,8 @@ void* srt::CRcvQueue::worker(void* param)
         // worker_TryAsyncRend_OrStore --->
         // CUDT::processAsyncConnectResponse --->
         // CUDT::processConnectResponse
+
+        // 交会连接模式
         self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit);
 
         // XXX updateConnStatus may have removed the connector from the list,
@@ -1361,6 +1405,7 @@ void* srt::CRcvQueue::worker(void* param)
     return NULL;
 }
 
+// 从接收缓冲区中获取一个空闲的数据单元，并接收一个包
 srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 #if !USE_BUSY_WAITING
@@ -1372,6 +1417,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
     // check waiting list, if new socket, insert it to the list
     while (ifNewEntry())
     {
+        // 获取一个新UDT实例，将其插入到m_pRcvUList和哈希表中
         CUDT* ne = getNewEntry();
         if (ne)
         {
@@ -1382,11 +1428,14 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
             m_pHash->insert(ne->m_SocketID, ne);
         }
     }
+
     // find next available slot for incoming packet
+    // 从发送缓冲区中获取一个空闲的数据单元，用来接收数据
     w_unit = m_pUnitQueue->getNextAvailUnit();
     if (!w_unit)
     {
         // no space, skip this packet
+        // 接收缓冲区已满，跳过这个包，注意：这个包还在对端的发送缓冲区中，因为在这里并没有要求对端主动丢包
         CPacket temp;
         temp.allocate(m_szPayloadSize);
         THREAD_PAUSED();
@@ -1400,13 +1449,18 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
         return rst == RST_ERROR ? RST_ERROR : RST_AGAIN;
     }
 
+    // 到这里，说明发送缓冲区空间足够，可以准备接收数据了
+
+    // 数据包长度
     w_unit->m_Packet.setLength(m_szPayloadSize);
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
+    // 通过UDP通道接收数据
     THREAD_PAUSED();
     EReadStatus rst = m_pChannel->recvfrom((w_addr), (w_unit->m_Packet));
     THREAD_RESUMED();
 
+    // 接收成功
     if (rst == RST_OK)
     {
         w_id = w_unit->m_Packet.id();
@@ -1417,6 +1471,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
     return rst;
 }
 
+// 处理连接阶段的请求
 srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
 {
     HLOGC(cnlog.Debug,
@@ -1771,12 +1826,14 @@ void srt::CRcvQueue::setNewEntry(CUDT* u)
     m_vNewEntry.push_back(u);
 }
 
+// 判断是否是一个新的UDT实例
 bool srt::CRcvQueue::ifNewEntry()
 {
     ScopedLock listguard(m_IDLock);
     return !(m_vNewEntry.empty());
 }
 
+// 获取一个新UDT实例
 srt::CUDT* srt::CRcvQueue::getNewEntry()
 {
     ScopedLock listguard(m_IDLock);

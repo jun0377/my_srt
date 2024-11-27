@@ -246,6 +246,7 @@ size_t CPacket::getLength() const
     return m_PacketVector[PV_DATA].size();
 }
 
+// 设置数据包长度
 void CPacket::setLength(size_t len)
 {
     m_PacketVector[PV_DATA].setLength(len);

@@ -68,12 +68,16 @@ namespace srt
 class CChannel;
 class CUDT;
 
+// 接收缓冲区的一个数据单元
 struct CUnit
 {
+    // 包
     CPacket m_Packet; // packet
+    // 当前数据单元是否已经被占用
     sync::atomic<bool> m_bTaken; // true if the unit is is use (can be stored in the RCV buffer).
 };
 
+// 接收缓冲区按一个一个的数据单元进行划分，读写都以数据单元作为基本单位
 class CUnitQueue
 {
 public:
@@ -85,7 +89,9 @@ public:
     ~CUnitQueue();
 
 public:
+    // 接收缓冲区容量，单位: 数据单元
     int capacity() const { return m_iSize; }
+    // 空闲数据单元数量
     int size() const { return m_iSize - m_iNumTaken; }
 
 public:
@@ -93,13 +99,18 @@ public:
     /// @note This function is not thread-safe. Currently only CRcvQueue::worker thread calls it, thus
     /// it is not an issue. However, must be protected if used from several threads in the future.
     /// @return Pointer to the available unit, NULL if not found.
+    
+    // 获取一个空闲的数据单元，这个过程中会进行扩容
     CUnit* getNextAvailUnit();
 
+    // 释放一个数据单元
     void makeUnitFree(CUnit* unit);
 
+    // 占用一个数据单元
     void makeUnitTaken(CUnit* unit);
 
 private:
+    // 接收缓冲区的一个数据单元队列，接收缓冲区由多个数据单元队列组成
     struct CQEntry
     {
         CUnit* m_pUnit;   // unit queue
@@ -112,22 +123,34 @@ private:
     /// Increase the unit queue size (by @a m_iBlockSize units).
     /// Uses m_mtx to protect access and changes of the queue state.
     /// @return 0: success, -1: failure.
+
+    // 增加接收缓冲区容量，增加一个数据单元队列的容量
     int increase_();
 
     /// @brief Allocated a CQEntry of iNumUnits with each unit of mss bytes.
     /// @param iNumUnits a number of units to allocate
     /// @param mss the size of each unit in bytes.
     /// @return a pointer to a newly allocated entry on success, NULL otherwise.
+
+    // 申请一个新的数据单元队列，队列容量为iNumUnits个单元，每个单元mss字节
     static CQEntry* allocateEntry(const int iNumUnits, const int mss);
 
 private:
+    // 指向第一个队列
     CQEntry* m_pQEntry;    // pointer to the first unit queue
+    // 指向当前正在访问的队列，即当前空闲的数据单元所在的队列
     CQEntry* m_pCurrQueue; // pointer to the current available queue
+    // 指向最后一个队列
     CQEntry* m_pLastQueue; // pointer to the last unit queue
+    // 最近一个空闲的数据单元
     CUnit* m_pAvailUnit; // recent available unit
+    // 接收缓冲区容量，单位: 数据单元
     int m_iSize;  // total size of the unit queue, in number of packets
+    // 已被占用的数据单元数量
     sync::atomic<int> m_iNumTaken; // total number of valid (occupied) packets in the queue
+    // 一个数据单元的容量
     const int m_iMSS; // unit buffer size
+    // 一个队列中包含和多少个数据单元
     const int m_iBlockSize; // Number of units in each CQEntry.
 
 private:
@@ -219,14 +242,20 @@ private:
     CSndUList& operator=(const CSndUList&);
 };
 
+// 接收UDT实例列表的一个节点
 struct CRNode
 {
+    // UDT实例
     CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
+    // 时间戳
     sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
 
+    // 前一个节点
     CRNode* m_pPrev; // previous link
+    // 下一个节点
     CRNode* m_pNext; // next link
 
+    // 当前节点是否在列表中
     sync::atomic<bool> m_bOnList; // if the node is already on the list
 };
 
@@ -263,6 +292,7 @@ private:
     CRcvUList& operator=(const CRcvUList&);
 };
 
+// 哈希表
 class CHash
 {
 public:
@@ -273,26 +303,31 @@ public:
     /// Initialize the hash table.
     /// @param [in] size hash table size
 
+    // 初始化哈希表，初始大小为size
     void init(int size);
 
     /// Look for a UDT instance from the hash table.
     /// @param [in] id socket ID
     /// @return Pointer to a UDT instance, or NULL if not found.
 
+    // 根据socket ID来查找UDT实例
     CUDT* lookup(int32_t id);
 
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
     /// @param [in] u pointer to the UDT instance
 
+    // 插入一个UDT实例到哈希表
     void insert(int32_t id, CUDT* u);
 
     /// Remove an entry from the hash table.
     /// @param [in] id socket ID
 
+    // 从哈希表中删除一个UDT实例
     void remove(int32_t id);
 
 private:
+    // 哈希桶
     struct CBucket
     {
         int32_t m_iID;  // Socket ID
@@ -301,6 +336,7 @@ private:
         CBucket* m_pNext; // next bucket
     } * *m_pBucket;       // list of buckets (the hash table)
 
+    // 哈希表大小
     int m_iHashSize; // size of hash table
 
 private:
@@ -476,6 +512,7 @@ private:
     CSndQueue& operator=(const CSndQueue&);
 };
 
+// 接收队列
 class CRcvQueue
 {
     friend class CUDT;
@@ -499,6 +536,7 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
+    // 初始化接收队列
     void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
 
     /// Read a packet for a specific UDT socket id.
@@ -517,6 +555,7 @@ private:
     static void*  worker(void* param);
     sync::CThread m_WorkerThread;
     // Subroutines of worker
+    // 从UDP通道读取数据，返回读数据状态
     EReadStatus    worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
     EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
     EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
@@ -529,7 +568,9 @@ private:
     CChannel*     m_pChannel;   // UDP channel for receiving packets
     sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
+    // IPv4 or IPv6
     int m_iIPversion;           // IP version
+    // 包负载大小
     size_t m_szPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
@@ -557,6 +598,7 @@ private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
     CRendezvousQueue*            m_pRendezvousQueue; // The list of sockets in rendezvous mode
 
+    // 待处理的UDT实例列表，等待插入到m_pRcvUList和哈希表
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
     sync::Mutex        m_IDLock;
 

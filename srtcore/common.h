@@ -265,6 +265,8 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt = 0);
 ////////////////////////////////////////////////////////////////////////////////
 
 // Commonly used by various reading facilities
+
+// 读数据状态: 成功/无数据/失败
 enum EReadStatus
 {
     RST_OK = 0,      //< A new portion of data has been received
@@ -272,6 +274,7 @@ enum EReadStatus
     RST_ERROR = -1   //< Irrecoverable error, please close descriptor and stop reading.
 };
 
+// 连接状态
 enum EConnectStatus
 {
     CONN_ACCEPT = 0,     //< Received final handshake that confirms connection established
