@@ -76,8 +76,10 @@ srt::CHandShake::CHandShake()
       m_piPeerIP[i] = 0;
 }
 
+// 握手报文序列化，即将握手报文转换为字节流
 int srt::CHandShake::store_to(char* buf, size_t& w_size)
 {
+    // 握手报文大小固定为48byte
    if (w_size < m_iContentSize)
       return -1;
 
@@ -98,6 +100,7 @@ int srt::CHandShake::store_to(char* buf, size_t& w_size)
    return 0;
 }
 
+// 解析握手报文，即将字节流转换为握手报文，解包
 int srt::CHandShake::load_from(const char* buf, size_t size)
 {
    if (size < m_iContentSize)
@@ -194,6 +197,7 @@ string srt::CHandShake::RdvStateStr(CHandShake::RendezvousState s)
 }
 #endif
 
+// 检查握手报文是否合法
 bool srt::CHandShake::valid()
 {
     if (m_iVersion < CUDT::HS_VERSION_UDT4
@@ -205,6 +209,7 @@ bool srt::CHandShake::valid()
     return true;
 }
 
+// 输出握手报文信息
 string srt::CHandShake::show()
 {
     ostringstream so;

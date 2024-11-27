@@ -210,28 +210,37 @@ struct SrtKMRequest: public SrtHandshakeExtension
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// UDT连接处于哪个阶段
 enum UDTRequestType
 {
     URQ_INDUCTION_TYPES = 0, // XXX used to check in one place. Consdr rm.
 
+    // 普通连接模式第一次握手
     URQ_INDUCTION = 1, // First part for client-server connection
+    // 交会连接模式的第一次握手
     URQ_WAVEAHAND = 0, // First part for rendezvous connection
 
+    // 第二次握手
     URQ_CONCLUSION = -1, // Second part of handshake negotiation
+    // 交会连接模式的最后一次握手
     URQ_AGREEMENT = -2, // Extra (last) step for rendezvous only
+    // 用于状态切换的特殊值
     URQ_DONE = -3,      // Special value used only in state-switching, to state that nothing should be sent in response
 
+    // 普通连接模式下的三次握手
     // Note: the client-server connection uses:
     // --> INDUCTION (empty)
     // <-- INDUCTION (cookie)
     // --> CONCLUSION (cookie)
     // <-- CONCLUSION (ok)
 
+    // 交会连接模式的两次握手，已废弃
     // The rendezvous HSv4 (legacy):
     // --> WAVEAHAND (effective only if peer is also connecting)
     // <-- CONCLUSION (empty) (consider yourself connected upon reception)
     // --> AGREEMENT (sent as a response for conclusion, requires no response)
 
+    // 交会连接模式的三次握手
     // The rendezvous HSv5 (using SRT extensions):
     // --> WAVEAHAND (with cookie)
     // --- (selecting INITIATOR/RESPONDER by cookie contest - comparing one another's cookie)
@@ -240,6 +249,7 @@ enum UDTRequestType
     // <-- AGREEMENT (sent exclusively by INITIATOR upon reception of CONCLUSIOn with response extensions)
 
     // This marks the beginning of values that are error codes.
+    // 错误码起始值，大于1000的值被用作错误码
     URQ_FAILURE_TYPES = 1000,
 
     // NOTE: codes above 1000 are reserved for failure codes for
@@ -249,9 +259,11 @@ enum UDTRequestType
 
     // This is in order to return standard error codes for server
     // data retrieval failures.
+    // 数据检索失败
     URQ_SERVER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_PREDEFINED,
 
     // This is for a completely user-defined reject reasons.
+    // 用户定义的错误码
     URQ_USER_FAILURE_TYPES = URQ_FAILURE_TYPES + SRT_REJC_USERDEFINED
 };
 
@@ -284,12 +296,15 @@ inline std::string RequestTypeStr(UDTRequestType) { return ""; }
 #endif
 
 
+// 连接阶段的握手
 class CHandShake
 {
 public:
     CHandShake();
 
+    // 握手报文序列化，即将握手报文转换为字节流，封包
     int store_to(char* buf, size_t& size);
+    // 握手报文反序列化，即将字节流转换为握手报文，解包
     int load_from(const char* buf, size_t size);
 
 public:
@@ -298,10 +313,11 @@ public:
     // enum values would have to be forced as int32_t, which is only
     // available in C++11. Theoretically they are all 32-bit, but
     // such a statement is not reliable and not portable.
+    // 握手报文固定大小为48byte
     static const size_t m_iContentSize = 48;	// Size of hand shake data
 
     // Extension flags
-
+    // 扩展标识
     static const int32_t HS_EXT_HSREQ = BIT(0);
     static const int32_t HS_EXT_KMREQ = BIT(1);
     static const int32_t HS_EXT_CONFIG  = BIT(2);
@@ -309,24 +325,37 @@ public:
     static std::string ExtensionFlagStr(int32_t fl);
 
     // Applicable only when m_iVersion == HS_VERSION_SRT1
+    // 获取套接字类型
     int32_t flags() { return m_iType; }
 
+    // 判断版本号是否大于4
     bool v5orHigher() { return m_iVersion > 4; }
 
 public:
+    // UDT版本，最新的是4.0
     int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
+    // 套接字类型，仅支持UDT_DGRAM类型的套接字
     int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
+    // 初始序列号，是一个随机值
     int32_t m_iISN;              // random initial sequence number
+    // 最大报文段大小
     int32_t m_iMSS;              // maximum segment size
+    // 流控窗口大小
     int32_t m_iFlightFlagSize;   // flow control window size
+    // UDT连接处于哪个阶段
     UDTRequestType m_iReqType;   // handshake stage
+    // SRT套接字ID，用来标识一路SRT流
     int32_t m_iID;               // SRT socket ID of HS sender
+    // cookie，建立连接时用于认证
     int32_t m_iCookie;		// cookie
+    // 对端IP
     uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
 
     bool m_extension;
 
+    // 检查握手报文是否合法
     bool valid();
+    // 输出握手报文信息
     std::string show();
 
     // The rendezvous state machine used in HSv5 only (in HSv4 everything is happening the old way).
