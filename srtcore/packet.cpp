@@ -185,19 +185,23 @@ CPacket::CPacket()
 
     // The part at PV_HEADER will be always set to a builtin buffer
     // containing SRT header.
+    // 包头域
     m_PacketVector[PV_HEADER].set(m_nHeader.raw(), HDR_SIZE);
 
     // The part at PV_DATA is zero-initialized. It should be
     // set (through m_pcData and setLength()) to some externally
     // provided buffer before calling CChannel::sendto().
+    // 数据域
     m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
+// 获取数据域
 char* CPacket::getData()
 {
     return (char*)m_PacketVector[PV_DATA].dataRef();
 }
 
+// 为数据域分配堆空间
 void CPacket::allocate(size_t alloc_buffer_size)
 {
     if (m_data_owned)
@@ -208,10 +212,12 @@ void CPacket::allocate(size_t alloc_buffer_size)
         // Would be nice to reallocate; for now just allocate again.
         delete[] m_pcData;
     }
+    // 分配数据域堆空间
     m_PacketVector[PV_DATA].set(new char[alloc_buffer_size], alloc_buffer_size);
     m_data_owned = true;
 }
 
+// 释放数据域堆空间
 void CPacket::deallocate()
 {
     if (m_data_owned)
@@ -241,6 +247,7 @@ CPacket::~CPacket()
     deallocate();
 }
 
+// 获取数据域长度
 size_t CPacket::getLength() const
 {
     return m_PacketVector[PV_DATA].size();
@@ -437,19 +444,26 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
     }
 }
 
+// 转换为网络字节序
+// 控制包的负载部分需要转换成网络字节序; 数据包的负载部分不必进行转换，因为数据是纯粹的二进制流
 void CPacket::toNetworkByteOrder()
 {
     // The payload of data packet should remain in network byte order.
+    // 控制包的负载部分需要转换成网络字节序; 数据包的负载部分不必进行转换
     if (isControl())
     {
         HtoNLA((uint32_t*) m_pcData, (const uint32_t*) m_pcData, getLength() / 4);
     }
 
     // Convert packet header independent of packet type.
+
+    // 包头转换成网络字节序
     uint32_t* p = m_nHeader;
     HtoNLA(p, p, 4);
 }
 
+// 转换成本地字节序
+// 控制包的负载部分需要转换成本地字节序; 数据包的负载部分不必进行转换
 void CPacket::toHostByteOrder()
 {
     // Convert packet header independent of packet type.
@@ -468,11 +482,13 @@ IOVector* CPacket::getPacketVector()
     return m_PacketVector;
 }
 
+// 获取数据包类型,bit[30:16]
 UDTMessageType CPacket::getType() const
 {
     return UDTMessageType(SEQNO_MSGTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]));
 }
 
+// 获取扩展类型,bit[15:0]
 int CPacket::getExtendedType() const
 {
     return SEQNO_EXTTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]);
@@ -487,6 +503,7 @@ int32_t CPacket::getAckSeqNo() const
     return m_nHeader[SRT_PH_MSGNO];
 }
 
+// 获取控制包的扩展类型
 uint16_t CPacket::getControlFlags() const
 {
     // This returns exactly the "extended type" value,
@@ -496,6 +513,7 @@ uint16_t CPacket::getControlFlags() const
     return SEQNO_EXTTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]);
 }
 
+// 获取消息边界
 PacketBoundary CPacket::getMsgBoundary() const
 {
     return PacketBoundary(MSGNO_PACKET_BOUNDARY::unwrap(m_nHeader[SRT_PH_MSGNO]));
@@ -518,11 +536,13 @@ int32_t CPacket::getMsgSeq(bool has_rexmit) const
     }
 }
 
+// 获取重传标识，true说明是一个重传的包
 bool CPacket::getRexmitFlag() const
 {
     return 0 != MSGNO_REXMIT::unwrap(m_nHeader[SRT_PH_MSGNO]);
 }
 
+// 设置重传标识
 void CPacket::setRexmitFlag(bool bRexmit)
 {
     const int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_REXMIT::mask;

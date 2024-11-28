@@ -23,11 +23,16 @@ namespace srt {
 
 class CPacket;
 
+// SRT包头字段
 enum SrtPktHeaderFields
 {
+    // 序列号
     SRT_PH_SEQNO = 0,     //< sequence number
+    // 消息号
     SRT_PH_MSGNO = 1,     //< message number
+    // 时间戳
     SRT_PH_TIMESTAMP = 2, //< time stamp
+    // 套接字ID
     SRT_PH_ID = 3,        //< socket ID
 
     // Must be the last value - this is size of all, not a field id

@@ -208,16 +208,30 @@ enum UDTSockType
 
 /// The message types used by UDT protocol. This is a part of UDT
 /// protocol and should never be changed.
+
+// UDT消息类型
 enum UDTMessageType
 {
+    // 握手报文
     UMSG_HANDSHAKE = 0, //< Connection Handshake. Control: see @a CHandShake.
+    // 保活报文
     UMSG_KEEPALIVE = 1, //< Keep-alive.
+    // ACK报文，携带接收到的最后一个序列号+1
     UMSG_ACK = 2, //< Acknowledgement. Control: past-the-end sequence number up to which packets have been received.
+    // NAK报文，报告丢包
     UMSG_LOSSREPORT = 3, //< Negative Acknowledgement (NAK). Control: Loss list.
+    // 拥塞警告报文
     UMSG_CGWARNING = 4, //< Congestion warning.
+    // 关闭报文
     UMSG_SHUTDOWN = 5, //< Shutdown.
+    // 对ACK进行确认的报文，确保ACK报文本身可靠传输
+    //发送方 -----> 数据包 -----> 接收方
+    // 发送方 <----- ACK    <----- 接收方
+    // 发送方 -----> ACKACK -----> 接收方
     UMSG_ACKACK = 6, //< Acknowledgement of Acknowledgement. Add info: The ACK sequence number
+    // 丢包请求报文，主动发起丢包
     UMSG_DROPREQ = 7, //< Message Drop Request. Add info: Message ID. Control Info: (first, last) number of the message.
+    // 对端发来的错误报文
     UMSG_PEERERROR = 8, //< Signal from the Peer side. Add info: Error code.
     // ... add extra code types here
     UMSG_END_OF_TYPES,

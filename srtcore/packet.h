@@ -221,6 +221,7 @@ const int32_t PUMASK_SEQNO_PROBE = 0xF;
 
 std::string PacketMessageFlagStr(uint32_t msgno_field);
 
+// 数据包结构
 class CPacket
 {
     friend class CChannel;
@@ -231,20 +232,28 @@ public:
     CPacket();
     ~CPacket();
 
+    // 为数据域分配堆空间
     void allocate(size_t size);
+    // 释放数据域堆空间
     void deallocate();
 
     /// Get the payload or the control information field length.
     /// @return the payload or the control information field length.
+
+    // 获取数据域有效数据长度
     size_t getLength() const;
 
     /// Set the payload or the control information field length.
     /// @param len [in] the payload or the control information field length.
+
+    // 设置数据域有效数据长度
     void setLength(size_t len);
 
     /// Set the payload or the control information field length.
     /// @param len [in] the payload or the control information field length.
     /// @param cap [in] capacity (if known).
+    
+    // 设置数据域有效数据长度和容量
     void setLength(size_t len, size_t cap);
 
     /// Pack a Control packet.
@@ -252,82 +261,119 @@ public:
     /// @param lparam [in] pointer to the first data structure, explained by the packet type.
     /// @param rparam [in] pointer to the second data structure, explained by the packet type.
     /// @param size [in] size of rparam, in number of bytes;
+
+    // 控制包打包
     void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, size_t size = 0);
 
     /// Read the packet vector.
     /// @return Pointer to the packet vector.
+
+    // 获取数据包指针
     IOVector* getPacketVector();
 
+    // 获取包头
     uint32_t* getHeader() { return m_nHeader; }
 
     /// Read the packet type.
     /// @return packet type filed (000 ~ 111).
+    
+    // 获取数据包类型
     UDTMessageType getType() const;
 
+    // 是否是一个指定类型的控制包
     bool isControl(UDTMessageType type) const { return isControl() && type == getType(); }
 
+    // 是否是一个控制包
     bool isControl() const { return 0 != SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]); }
 
+    // 设置包类型
     void setControl(UDTMessageType type) { m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type); }
 
     /// Read the extended packet type.
     /// @return extended packet type filed (0x000 ~ 0xFFF).
+
+    // 获取扩展类型,bit[15:0]
     int getExtendedType() const;
 
     /// Read the ACK-2 seq. no.
     /// @return packet header field (bit 16~31).
+
+    // 获取ACK-2序列号，其实就是获取包的消息号
     int32_t getAckSeqNo() const;
 
+    // 获取控制包的扩展类型
     uint16_t getControlFlags() const;
 
     // Note: this will return a "singular" value, if the packet
     // contains the control message
+
+    // 获取序列号
     int32_t getSeqNo() const { return m_nHeader[SRT_PH_SEQNO]; }
 
     /// Read the message boundary flag bit.
     /// @return packet header field [1] (bit 0~1).
+    
+    // 获取消息边界
     PacketBoundary getMsgBoundary() const;
 
     /// Read the message inorder delivery flag bit.
     /// @return packet header field [1] (bit 2).
+
+    // 获取乱序标识
     bool getMsgOrderFlag() const;
 
     /// Read the rexmit flag (true if the packet was sent due to retransmission).
     /// If the peer does not support retransmission flag, the current agent cannot use it as well
     /// (because the peer will understand this bit as a part of MSGNO field).
+
+    // 获取重传标识，true说明是一个重传的包
     bool getRexmitFlag() const;
 
+    // 设置重传标识
     void setRexmitFlag(bool bRexmit);
 
     /// Read the message sequence number.
     /// @return packet header field [1]
+
+    // 获取消息号
     int32_t getMsgSeq(bool has_rexmit = true) const;
 
     /// Read the message crypto key bits.
     /// @return packet header field [1] (bit 3~4).
+
+    // 获取消息加密密钥
     EncryptionKeySpec getMsgCryptoFlags() const;
 
+    // 设置消息加密密钥
     void setMsgCryptoFlags(EncryptionKeySpec spec);
 
     /// Read the message time stamp.
     /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
+
+    // 获取消息时间戳
     uint32_t getMsgTimeStamp() const;
 
+    // UDP目的地址
     sockaddr_any udpDestAddr() const { return m_DestAddr; }
 
 #ifdef SRT_DEBUG_TSBPD_WRAP                           // Receiver
+    // 时间戳最大值
     static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; // 27 bit fast wraparound for tests (~2m15s)
 #else
     static const uint32_t MAX_TIMESTAMP = 0xFFFFFFFF; // Full 32 bit (01h11m35s)
 #endif
 
 protected:
+    // 时间戳掩码
     static const uint32_t TIMESTAMP_MASK = MAX_TIMESTAMP; // this value to be also used as a mask
 public:
     /// Clone this packet.
     /// @return Pointer to the new packet.
+
+    // 克隆一个数据包
     CPacket* clone() const;
 
+    // 数据包字段; 0 - 包头字段; 1 - 数据字段;
     enum PacketVectorFields
     {
         PV_HEADER = 0,
@@ -338,19 +384,28 @@ public:
 
 public:
     /// @brief Convert the packet inline to a network byte order (Little-endian).
+    // 转换为网络字节序
+    // 控制包的负载部分需要转换成网络字节序; 数据包的负载部分不必进行转换; 数据的解释是应用层的责任
     void toNetworkByteOrder();
 	/// @brief Convert the packet inline to a host byte order.
+    // 转换成本地字节序
+    // 控制包的负载部分需要转换成本地字节序; 数据包的负载部分不必进行转换
     void toHostByteOrder();
 
 protected:
     // DynamicStruct is the same as array of given type and size, just it
     // enforces that you index it using a symbol from symbolic enum type, not by a bare integer.
+
     typedef DynamicStruct<uint32_t, SRT_PH_E_SIZE, SrtPktHeaderFields> HEADER_TYPE;
+    // 128bit的包头
     HEADER_TYPE                                                        m_nHeader; //< The 128-bit header field
 
+    // m_PacketVector[0] - 包头; m_PacketVector[1] - 数据
     IOVector m_PacketVector[PV_SIZE]; //< The two-dimensional vector of an SRT packet [header, data]
 
+    // 扩展
     int32_t m_extra_pad;
+    // 是否拥有数据域的所有权，负责管理数据域的堆空间
     bool    m_data_owned;
     sockaddr_any m_DestAddr;
     // 数据包容量
@@ -361,19 +416,26 @@ protected:
     CPacket(const CPacket&);
 
 public:
+    // 指针，指向控制包的包头部分; 指向数据包的数据部分
     char*&   m_pcData;     // alias: payload (data packet) / control information fields (control packet)
 
-    SRTU_PROPERTY_RO(SRTSOCKET, id, SRTSOCKET(m_nHeader[SRT_PH_ID]));
+    // 只写属性
     SRTU_PROPERTY_WO_ARG(SRTSOCKET, id, m_nHeader[SRT_PH_ID] = int32_t(arg));
+    // 只读属性
+    SRTU_PROPERTY_RO(SRTSOCKET, id, SRTSOCKET(m_nHeader[SRT_PH_ID]));
 
+    // 读写属性
     SRTU_PROPERTY_RW(int32_t, seqno, m_nHeader[SRT_PH_SEQNO]);
     SRTU_PROPERTY_RW(int32_t, msgflags, m_nHeader[SRT_PH_MSGNO]);
     SRTU_PROPERTY_RW(int32_t, timestamp, m_nHeader[SRT_PH_TIMESTAMP]);
 
     // Experimental: sometimes these references don't work!
+    // 获取数据域
     char* getData();
+    // 释放数据域堆空间
     char* release();
 
+    // 包头大小: 目前固定为128bit，采用sizeof计算是为了兼容将来可能对包头进行扩展
     static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
     // Can also be calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
@@ -388,14 +450,20 @@ public:
     static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
 
     // Packet interface
+    // 获取数据包的数据，获取控制包的包头
     char*       data() { return m_pcData; }
     const char* data() const { return m_pcData; }
+    // 负载长度
     size_t      size() const { return getLength(); }
+    // 数据包容量
     size_t      capacity() const { return m_zCapacity; }
+    // 设置数据包容量
     void        setCapacity(size_t cap) { m_zCapacity = cap; }
+    // 获取包头中的指定域
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if ENABLE_LOGGING
+    // 调试信息，以字符串形式输出消息标识
     std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
     std::string Info();
 #else
