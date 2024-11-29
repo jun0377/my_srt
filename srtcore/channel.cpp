@@ -159,6 +159,7 @@ srt::CChannel::CChannel()
 
 srt::CChannel::~CChannel() {}
 
+// 创建UDP套接字，可支持IPv6
 void srt::CChannel::createSocket(int family)
 {
 #if ENABLE_SOCK_CLOEXEC
@@ -215,11 +216,14 @@ void srt::CChannel::createSocket(int family)
     }
 }
 
+// 创建一个UDP套接字，并设置套接字属性
 void srt::CChannel::open(const sockaddr_any& addr)
 {
+    // 创建UDP套接
     createSocket(addr.family());
     socklen_t namelen = addr.size();
 
+    // 绑定套接字
     if (::bind(m_iSocket, &addr.sa, namelen) == -1)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
@@ -229,9 +233,11 @@ void srt::CChannel::open(const sockaddr_any& addr)
 #endif
     LOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
+    // 设置UDP套接字选项
     setUDPSockOpt();
 }
 
+// 创建一个UDP套接字，并设置套接字属性
 void srt::CChannel::open(int family)
 {
     createSocket(family);
@@ -289,18 +295,23 @@ void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
     setUDPSockOpt();
 }
 
+// 设置UDP套接字选项: 发送/接收缓冲区; TTL; TOS; 将套接字绑定到指定的interface; 非阻塞模式; 
 void srt::CChannel::setUDPSockOpt()
 {
 #if defined(SUNOS)
     {
         socklen_t optSize;
         // Retrieve starting SND/RCV Buffer sizes.
+
+        // 获取接收缓冲区大小
         int startRCVBUF = 0;
         optSize         = sizeof(startRCVBUF);
         if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&startRCVBUF, &optSize))
         {
             startRCVBUF = -1;
         }
+
+        // 获取发送缓冲区大小
         int startSNDBUF = 0;
         optSize         = sizeof(startSNDBUF);
         if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&startSNDBUF, &optSize))
@@ -311,6 +322,8 @@ void srt::CChannel::setUDPSockOpt()
         // SunOS will fail setsockopt() if the requested buffer size exceeds system
         //   maximum value.
         // However, do not reduce the buffer size.
+
+        // 设置接收缓冲区
         const int maxsize = 64000;
         if (0 !=
             ::setsockopt(
@@ -327,6 +340,8 @@ void srt::CChannel::setUDPSockOpt()
                 ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&maxsize, sizeof maxsize);
             }
         }
+
+        // 设置发送缓冲区
         if (0 !=
             ::setsockopt(
                 m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
@@ -344,12 +359,16 @@ void srt::CChannel::setUDPSockOpt()
         }
 
         // Retrieve ending SND/RCV Buffer sizes.
+
+        // 再次获取接收缓冲区大小
         int endRCVBUF = 0;
         optSize       = sizeof(endRCVBUF);
         if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&endRCVBUF, &optSize))
         {
             endRCVBUF = -1;
         }
+
+        // 再次获取发送缓冲区大小
         int endSNDBUF = 0;
         optSize       = sizeof(endSNDBUF);
         if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&endSNDBUF, &optSize))
@@ -384,6 +403,7 @@ void srt::CChannel::setUDPSockOpt()
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #endif
 
+    // 设置IP TTL
     if (m_mcfg.iIpTTL != -1)
     {
         if (m_BindAddr.family() == AF_INET)
@@ -417,6 +437,7 @@ void srt::CChannel::setUDPSockOpt()
         }
     }
 
+    // TOS
     if (m_mcfg.iIpToS != -1)
     {
         if (m_BindAddr.family() == AF_INET)
@@ -453,6 +474,8 @@ void srt::CChannel::setUDPSockOpt()
     }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
+
+    // 将套接字绑定到指定的interface
     if (!m_mcfg.sBindToDevice.empty())
     {
         if (m_BindAddr.family() != AF_INET)
@@ -475,6 +498,9 @@ void srt::CChannel::setUDPSockOpt()
 #endif
 
 #ifdef UNIX
+
+    // 设置非阻塞I/O
+
     // Set non-blocking I/O
     // UNIX does not support SO_RCVTIMEO
     int opts = ::fcntl(m_iSocket, F_GETFL);
@@ -521,6 +547,7 @@ void srt::CChannel::setUDPSockOpt()
 #endif
 }
 
+// 关闭UDP套接字
 void srt::CChannel::close() const
 {
 #ifndef _WIN32
@@ -530,6 +557,7 @@ void srt::CChannel::close() const
 #endif
 }
 
+// 获取内核发送缓冲区大小
 int srt::CChannel::getSndBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPSndBufSize;

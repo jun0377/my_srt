@@ -61,8 +61,10 @@ modified by
 namespace srt
 {
 
+// UDP物理通道
 class CChannel
 {
+    // 创建UDP套接字，可支持IPv6
     void createSocket(int family);
 
 public:
@@ -78,37 +80,45 @@ public:
     /// Open a UDP channel.
     /// @param [in] addr The local address that UDP will use.
 
+    // 创建一个UDP套接字，并设置套接字属性
     void open(const sockaddr_any& addr);
 
+    // 创建一个UDP套接字，并设置套接字属性
     void open(int family);
 
     /// Open a UDP channel based on an existing UDP socket.
     /// @param [in] udpsock UDP socket descriptor.
 
+    // 将当前通道绑定到一个已创建的UDP套接字
     void attach(UDPSOCKET udpsock, const sockaddr_any& adr);
 
     /// Disconnect and close the UDP entity.
 
+    // 关闭UDP套接字
     void close() const;
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.
 
+    // 获取内核发送缓冲区大小
     int getSndBufSize();
 
     /// Get the UDP receiving buffer size.
     /// @return Current UDP receiving buffer size.
 
+    // 获取内核接收缓冲区大小
     int getRcvBufSize();
 
     /// Query the socket address that the channel is using.
     /// @param [out] addr pointer to store the returned socket address.
 
+    // 获取UDP套接字本地地址
     void getSockAddr(sockaddr_any& addr) const;
 
     /// Query the peer side socket address that the channel is connect to.
     /// @param [out] addr pointer to store the returned socket address.
 
+    // 获取UDP套接字对端地址
     void getPeerAddr(sockaddr_any& addr) const;
 
     /// Send a packet to the given address.
@@ -117,6 +127,7 @@ public:
     /// @param [in] src source address to sent on an outgoing packet (if not ANY)
     /// @return Actual size of data sent.
 
+    // 发送一个SRT包
     int sendto(const sockaddr_any& addr, srt::CPacket& packet, const sockaddr_any& src) const;
 
     /// Receive a packet from the channel and record the source address.
@@ -124,10 +135,13 @@ public:
     /// @param [in] packet reference to a CPacket entity.
     /// @return Actual size of data received.
 
+    // 接收一个SRT包
     EReadStatus recvfrom(sockaddr_any& addr, srt::CPacket& packet) const;
 
+    // 设置SRT多路复用器配置
     void setConfig(const CSrtMuxerConfig& config);
 
+    // 获取UDP套接字选项
     void getSocketOption(int level, int sockoptname, char* pw_dataptr, socklen_t& w_len, int& w_status);
 
     template<class Type>
@@ -165,6 +179,7 @@ public:
     const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
 private:
+    // 设置UDP套接字选项: 发送/接收缓冲区; TTL; TOS; 将套接字绑定到指定的interface; 非阻塞模式; 
     void setUDPSockOpt();
 
 private:

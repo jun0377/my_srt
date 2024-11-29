@@ -214,6 +214,7 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
 
 // GROUP
 
+// 向组中添加一个SRT套接字，返回组中最后一个元素的指针
 CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 {
     ScopedLock g(m_GroupLock);
@@ -223,18 +224,31 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
     // after releasing the m_GroupLock could be read and interpreted
     // as broken connection and removed before the handshake process
     // is done.
+
+    // 将组成员的发送/接收状态改为 PENDING。
+    // SocketData 创建后的默认状态是 BROKEN，这样在释放 m_GroupLock 后
+    // 可能会被读取并解释为连接断开，从而在握手过程完成之前就被移除。
+
+    // 将套接字的发送/接收状态改为 PENDING。
     data.sndstate = SRT_GST_PENDING;
     data.rcvstate = SRT_GST_PENDING;
 
     LOGC(gmlog.Note, log << "group/add: adding member @" << data.id << " into group $" << id());
+    // 添加到组
     m_Group.push_back(data);
+    
     gli_t end = m_Group.end();
+
+    // 初始化套接字组数据包的最大payload, 使用组中第一个SRT套接字的数据包payload大小
     if (m_iMaxPayloadSize == -1)
     {
+        // 获取用户设置的负载大小
         int plsize = (int)data.ps->core().OPT_PayloadSize();
         HLOGC(gmlog.Debug,
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
+        
+        // 用户没有进行设置，设为默认值:1456
         if (plsize == 0)
             plsize = SRT_LIVE_MAX_PLSIZE;
         // It is stated that the payload size
@@ -243,6 +257,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
         m_iMaxPayloadSize = plsize;
     }
 
+    // 返回最后一个元素的指针
     --end;
     return &*end;
 }
@@ -1123,15 +1138,18 @@ void CUDTGroup::send_CheckValidSockets()
 
 int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
+    // 套接字组类型: 广播模式、主备模式
     switch (m_type)
     {
     default:
         LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
+    // 广播模式发送数据
     case SRT_GTYPE_BROADCAST:
         return sendBroadcast(buf, len, (w_mc));
 
+    // 主备模式发送数据
     case SRT_GTYPE_BACKUP:
         return sendBackup(buf, len, (w_mc));
 
@@ -4105,6 +4123,7 @@ int32_t CUDTGroup::generateISN()
     return CUDT::generateISN();
 }
 
+// 设置套接字组连接状态
 void CUDTGroup::setGroupConnected()
 {
     if (!m_bConnected)

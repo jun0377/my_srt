@@ -23,6 +23,7 @@ namespace srt
 namespace groups
 {
 
+// 准备套接字相关信息
 SocketData prepareSocketData(CUDTSocket* s)
 {
     // This uses default SRT_GST_BROKEN because when the group operation is done,

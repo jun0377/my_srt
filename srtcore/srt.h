@@ -292,6 +292,7 @@ static const int SRT_LIVE_DEF_PLSIZE = 1316; // = 188*7, recommended for MPEG TS
 
 // This is the maximum payload size for Live mode, should you have a different
 // payload type than MPEG TS.
+// LIVE模式下，数据包的最大payload大小
 static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
@@ -950,7 +951,9 @@ SRT_API int srt_clock_type(void);
 typedef enum SRT_GROUP_TYPE
 {
     SRT_GTYPE_UNDEFINED,
+    // 广播模式
     SRT_GTYPE_BROADCAST,
+    // 备份模式
     SRT_GTYPE_BACKUP,
     // ...
     SRT_GTYPE_E_END
@@ -962,9 +965,13 @@ static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
 
 typedef enum SRT_MemberStatus
 {
+    // 套接字已创建，但是还未准备好接收数据
     SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
+    // 套接字已准备好接收数据
     SRT_GST_IDLE,     // The socket is ready to be activated
+    // 套接字已激活并正在使用
     SRT_GST_RUNNING,  // The socket was already activated and is in use
+    // 套接字，需要关闭
     SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
 } SRT_MEMBERSTATUS;
 

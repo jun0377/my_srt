@@ -76,19 +76,27 @@ extern const int32_t SRT_DEF_VERSION;
 namespace srt
 {
 
+// SRT多路复用器配置
 struct CSrtMuxerConfig
 {
     static const int DEF_UDP_BUFFER_SIZE = 65536;
 
+    // IP TTL
     int  iIpTTL;
+    // IP TOS
     int  iIpToS;
+    // IPv6选项
     int  iIpV6Only;  // IPV6_V6ONLY option (-1 if not set)
+    // 是否允许地址复用
     bool bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
 
 #ifdef SRT_ENABLE_BINDTODEVICE
+    // 绑定到指定的网络适配器interface
     std::string sBindToDevice;
 #endif
+    // UDP发送缓冲区大小
     int iUDPSndBufSize; // UDP sending buffer size
+    // UDP接收缓冲区大小
     int iUDPRcvBufSize; // UDP receiving buffer size
 
     // NOTE: this operator is not reversable. The syntax must use:
@@ -217,6 +225,7 @@ struct CSrtConfig: CSrtMuxerConfig
     static const size_t MAX_CONG_LENGTH    = 16;
 
     int    iMSS;            // Maximum Segment Size, in bytes
+    // 用户设置的数据包负载大小
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options

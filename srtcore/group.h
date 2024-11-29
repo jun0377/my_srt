@@ -29,7 +29,7 @@ namespace srt
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
-
+// 管理和控制SRT连接组
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -42,6 +42,7 @@ class CUDTGroup
     typedef groups::BackupMemberState BackupMemberState;
 
 public:
+    // SRT套接字状态
     typedef SRT_MEMBERSTATUS GroupState;
 
     // Note that the use of states may differ in particular group types:
@@ -60,14 +61,35 @@ public:
     // (the current active link fails to receive ACK in a time when two ACKs should already
     // be received). After a while when the current active link is confirmed broken, it turns
     // into broken state.
+    /*
+        广播(Broadcast)模式：
+            新建立的连接会短暂处于PENDING状态，然后变为IDLE状态
+            在最近的发送操作时会立即被激活
+        负载均衡(Balancing)模式：
+            基本行为与广播模式类似
+            但链路激活时会获得相应比例的流量分配,流量分配策略？
+        多播(Multicast)模式：
+            链路永远不会处于空闲状态
+            数据始终通过UDP多播链路发送
+            接收方只需订阅并在就绪后读取数据包
+        备份(Backup)模式：
+            链路保持空闲状态直到被激活
+            只有在当前活动链路"可能已损坏"时才会激活
+            触发条件：当前活动链路在应该收到两个ACK的时间内都未收到ACK
+            当确认当前活动链路已损坏后，该链路会转变为broken状态
+    */
 
+    // 套接字状态字符串
     static const char* StateStr(GroupState);
 
+    // token
     static int32_t s_tokenGen;
+    // 生成token
     static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
 
     struct ConfigItem
     {
+        // SRT套接字选项
         SRT_SOCKOPT                so;
         std::vector<unsigned char> value;
 
@@ -103,6 +125,7 @@ public:
     typedef group_t::iterator     gli_t;
     typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
+    // 发送状态
     struct Sendstate
     {
         SRTSOCKET id;
@@ -114,8 +137,10 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
+    // 向组中添加一个SRT套接字，返回组中最后一个元素的指针，其实就是新添加的套接字
     SocketData* add(SocketData data);
 
+    // 检查两个套接字是否相同，用于STL查找算法find_id
     struct HaveID
     {
         SRTSOCKET id;
@@ -126,6 +151,7 @@ public:
         bool operator()(const SocketData& s) { return s.id == id; }
     };
 
+    // 检查指定的套接字是否在组中，如果存在，返回套接字指针，否则返回NULL
     bool contains(SRTSOCKET id, SocketData*& w_f)
     {
         srt::sync::ScopedLock g(m_GroupLock);
@@ -140,7 +166,9 @@ public:
     }
 
     // NEED LOCKING
+    // 返回指向组中第一个元素的迭代器
     gli_t begin() { return m_Group.begin(); }
+    // 返回指向组中最后一个元素的迭代器
     gli_t end() { return m_Group.end(); }
 
     /// Remove the socket from the group container.
@@ -149,17 +177,22 @@ public:
     /// PRIOR TO calling this function.
     /// @param id Socket ID to look for in the container to remove
     /// @return true if the container still contains any sockets after the operation
+
+    // 从组中移除套接字
     bool remove(SRTSOCKET id)
     {
         using srt_logging::gmlog;
         srt::sync::ScopedLock g(m_GroupLock);
 
+        // 组是否为空
         bool empty = false;
         LOGC(gmlog.Note, log << "group/remove: removing member @" << id << " from group $" << m_GroupID);
 
+        // 查找指定套接字
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
         {
+            // 从组中删除套接字
             m_Group.erase(f);
 
             // Reset sequence numbers on a dead group so that they are
@@ -172,12 +205,17 @@ public:
             // socket is connected again. This may stay as is for now
             // as in SRT it's not predicted to do anything with the socket
             // that was disconnected other than immediately closing it.
+
+            // 组为空，重新设置初始序列号
             if (m_Group.empty())
             {
                 // When the group is empty, there's no danger that this
                 // number will collide with any ISN provided by a socket.
                 // Also since now every socket will derive this ISN.
+
+                // 重新生成初始序列号
                 m_iLastSchedSeqNo = generateISN();
+                // 置位接收初始序列号
                 resetInitialRxSequence();
                 empty = true;
             }
@@ -188,6 +226,7 @@ public:
             empty = true; // not exactly true, but this is to cause error on group in the APP
         }
 
+        // 组为空，置位套接字组状态
         if (m_Group.empty())
         {
             m_bOpened    = false;
@@ -197,17 +236,23 @@ public:
         return !empty;
     }
 
+    // 检查套接字组是否为空
     bool groupEmpty()
     {
         srt::sync::ScopedLock g(m_GroupLock);
         return m_Group.empty();
     }
 
+    // 更新套接字组连接状态
     void setGroupConnected();
 
+    // 发送数据
     int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    // 广播模式发送数据
     int            sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    // 备份模式发送数据
     int            sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    // 生成初始序列号
     static int32_t generateISN();
 
 private:
@@ -399,6 +444,7 @@ private:
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
     srt::CUDTUnited&  m_Global;
+    // 全局同步访问的锁
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
@@ -406,7 +452,9 @@ private:
     struct GroupContainer
     {
     private:
+        // 套接字组
         std::list<SocketData>  m_List;
+        // 套接字组中元素个数
         sync::atomic<size_t>   m_SizeCache;
 
         /// This field is used only by some types of groups that need
@@ -426,21 +474,30 @@ private:
         // Property<gli_t> active = { m_LastActiveLink; }
         SRTU_PROPERTY_RW(gli_t, active, m_LastActiveLink);
 
+        // 返回指向组中第一个元素的迭代器
         gli_t        begin() { return m_List.begin(); }
+        // 返回指向组中最后一个元素的迭代器
         gli_t        end() { return m_List.end(); }
+        // 检查套接字组是否为空
         bool         empty() { return m_List.empty(); }
+        // 向组中添加一个套接字
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
+        // 清空套接字组
         void         clear()
         {
             m_LastActiveLink = end();
             m_List.clear();
             m_SizeCache = 0;
         }
+        // 套接字组中元素个数
         size_t size() { return m_SizeCache; }
 
+        // 删除组中的指定元素
         void erase(gli_t it);
     };
+    // 套接字组
     GroupContainer m_Group;
+    // 套接字组类型: 广播模式、备份模式
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
@@ -623,6 +680,7 @@ private:
     int32_t addMessageToBuffer(const char* buf, size_t len, SRT_MSGCTRL& w_mc);
 
     std::set<int>      m_sPollID; // set of epoll ID to trigger
+    // 数据包的最大payload
     int                m_iMaxPayloadSize;
     int                m_iAvgPayloadSize;
     bool               m_bSynRecving;
@@ -662,6 +720,7 @@ private:
     sync::atomic<int32_t> m_RcvBaseSeqNo;
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
+    // 套接字组连接状态，只要已连接的SRT套接字，就设置为true
     bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
 
@@ -749,6 +808,7 @@ public:
 #endif
     }
 
+    // 置位接收初始序列号
     void resetInitialRxSequence()
     {
         // The app-reader doesn't care about the real sequence number.
