@@ -15580,7 +15580,18 @@ int CUDTGroup::sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // 5. The selector can return a link to use again, or gli_NULL() if the operation should fail
         // 6. If the selector returned a valid link, go to p. 2.
 
+        /*
+            选择算法大概如下:
+                1. 选择一个链路用于发送
+                2. 执行发送操作
+                3. 如果操作成功，记录这个链路并成功退出
+                4. 如果操作失败，再次调用选择器，这次带上错误信息
+                5. 选择器可以返回一个可用的链路继续尝试，或返回gli_NULL()表示操作应该失败
+                6. 如果选择器返回了有效的链路，跳转到第2步
+        */
+
         // Call selection. Default: defaultSelectLink
+        // 链路选择器   - 先选择上一次发送使用的链路
         selink = CALLBACK_CALL(m_cbSelectLink, lstate);
 
         if (selink == m_Group.null())
