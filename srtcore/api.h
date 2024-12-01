@@ -154,7 +154,9 @@ public:
 
     SRTSOCKET m_PeerID; //< peer socket ID
 #if ENABLE_BONDING
+	// SRT套接字组，NULL表示当前陶杰组不属于哪个组
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    // 当前套接字属于哪个组，NULL表示不属于任何组
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
@@ -247,6 +249,7 @@ public:
     ~CUDTUnited();
 
     // Public constants
+    // SRT套接字的最大值
     static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1; // maximum value for a regular socket
 
 public:
@@ -396,9 +399,13 @@ private:
     /// @param group The socket id should be for socket group.
     /// @return The new socket ID.
     /// @throw CUDTException if after rolling over all possible ID values nothing can be returned
+    
+	// 生成一个SRTSOCKET，其实就是生成了一个唯一的标识符
     SRTSOCKET generateSocketID(bool group = false);
 
 private:
+
+	// 使用map来维护所有的SRT套接字
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
@@ -533,6 +540,7 @@ private:
     /// UDT network information cache.
     /// Existence is guarded by m_GlobControlLock, but the cache itself is thread-safe.
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    // 网络质量信息cache
     CCache<CInfoBlock>* const m_pCache;
 
 private:

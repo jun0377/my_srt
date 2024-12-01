@@ -29,6 +29,8 @@
 // accepted socket ready and then to wait for read-readiness on
 // the transmission socket. For a model of waiting for write-ready
 // see test-c-client-bonding.c file.
+
+// 等待监听套接字就绪
 int WaitForReadReady(int eid, SRTSOCKET ss)
 {
     int ready_in[2];
@@ -73,6 +75,8 @@ int main(int argc, char** argv)
     struct sockaddr_in sa;
     int yes = 1;
     struct sockaddr_storage their_addr;
+
+	// 套接字组属性
     SRT_SOCKGROUPDATA* grpdata = NULL;
 
     if (argc < 3 || argc > 4)
@@ -81,10 +85,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
+	// 启动SRT例程
     printf("srt startup\n");
     srt_startup();
     // Since now, srt_cleanup() must be done before exiting.
 
+	// 创建SRT套接字，并初始化相关资源
     printf("srt socket\n");
     ss = srt_create_socket();
     if (ss == SRT_ERROR)
@@ -122,9 +128,11 @@ int main(int argc, char** argv)
     sa.sin_family = AF_INET;
     sa.sin_port = htons(atoi(argv[2]));
 
+	// 设置SRT套接字选项：启用连接绑定
     printf("srt setsockflag: groupconnect\n");
     srt_setsockflag(ss, SRTO_GROUPCONNECT, &yes, sizeof yes);
 
+	// 将SRTSOCKET和UDP通道相关联
     printf("srt bind\n");
     st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
     if (st == SRT_ERROR)
@@ -134,6 +142,7 @@ int main(int argc, char** argv)
         goto end;
     }
 
+	// 非阻塞模式，创建EPOLL实例
     if (is_nonblocking)
     {
         int blockingmode = 0;
@@ -148,6 +157,8 @@ int main(int argc, char** argv)
     // defines a maximum number of connections that can be pending
     // simultaneously - it doesn't matter here if particular connection
     // will belong to a bonding group or will be a single-socket connection.
+
+	// listen
     st = srt_listen(ss, 10);
     if (st == SRT_ERROR)
     {
@@ -161,18 +172,24 @@ int main(int argc, char** argv)
     // The listener, however, doesn't know how many member connections
     // one bonded connection will contain, so a real application should be
     // prepared for dynamically adjusting the array size.
+
+	// 准备包含10个元素的数组
     const size_t N = 10;
     grpdata = calloc(N, sizeof (SRT_SOCKGROUPDATA));
 
     // In non-blocking mode you can't call srt_accept immediately.
     // You must first wait for readiness on the listener socket.
+
+	// 非阻塞模式下，不能立即调用srt_accept,必须首先等待监听套接字就绪
     if (is_nonblocking)
     {
         printf("srt wait for listener socket reporting in a new connection\n");
+		// 等待监听套接字就绪
         if (!WaitForReadReady(eid, ss))
             goto end;
     }
 
+	// 接收连接
     printf("srt accept\n");
     int addr_size = sizeof their_addr;
     their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
@@ -188,6 +205,8 @@ int main(int argc, char** argv)
     // You never know if `srt_accept` is going to give you a socket or a group.
     // You have to check it on your own. The SRTO_GROUPCONNECT flag doesn't disallow
     // single socket connections.
+
+	// 检查对端是否是一个套接字组
     int isgroup = their_fd & SRTGROUP_MASK;
 
     if (!isgroup)
@@ -196,21 +215,27 @@ int main(int argc, char** argv)
         goto end;
     }
 
+	// 非阻塞模式
     if (is_nonblocking)
     {
         // NOTE: The SRTO_RCVSYN = false flag will be derived from
         // the listener socket and we are going to read, so it matches
         // the need. In case when you'd like to write to the accepted
         // socket, you'd have to set also SRTO_SNDSYN = false.
+
+		// 将新的套接字加入epoll,关注读和异常事件
         srt_epoll_add_usock(eid, their_fd, &read_modes);
 
         // The listener socket is no longer important.
+
+		// 将监听套接字从epoll中删除
         srt_epoll_remove_usock(eid, ss);
     }
 
     // Still, use the same procedure for receiving, no matter if
     // this is a bonded or single connection.
     int i;
+	// 循环接收消息
     for (i = 0; i < 100; i++)
     {
         printf("srt recvmsg #%d... ",i);
@@ -226,6 +251,7 @@ int main(int argc, char** argv)
                 goto end;
         }
 
+		// 接收消息
         st = srt_recvmsg2(their_fd, msg, sizeof msg, &mc);
         if (st == SRT_ERROR)
         {

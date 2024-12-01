@@ -33,9 +33,9 @@ int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
 
 // Socket creation.
-// 创建一个SRTSOCKET
+// 创建一个SRTSOCKET，并初始化相关资源
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
-// 同样是创建一个SRTSOCKET
+// 创建一个SRTSOCKET，并初始化相关资源
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
 // 连接绑定

@@ -67,7 +67,7 @@ public:
             在最近的发送操作时会立即被激活
         负载均衡(Balancing)模式：
             基本行为与广播模式类似
-            但链路激活时会获得相应比例的流量分配,流量分配策略？
+            但链路激活时会获得相应比例的流量分配,流量分配策略是怎样的呢？
         多播(Multicast)模式：
             链路永远不会处于空闲状态
             数据始终通过UDP多播链路发送
@@ -91,8 +91,10 @@ public:
     {
         // SRT套接字选项
         SRT_SOCKOPT                so;
+        // 套接字选项配置
         std::vector<unsigned char> value;
 
+        // 获取配置
         template <class T>
         bool get(T& refr)
         {
@@ -102,6 +104,7 @@ public:
             return true;
         }
 
+        // 套接字配置
         ConfigItem(SRT_SOCKOPT o, const void* val, int size)
             : so(o)
         {
@@ -110,6 +113,7 @@ public:
             std::copy(begin, begin + size, value.begin());
         }
 
+        // 套接字选项类型
         struct OfType
         {
             SRT_SOCKOPT so;
@@ -128,9 +132,9 @@ public:
     // 发送状态
     struct Sendstate
     {
-        SRTSOCKET id;
-        SocketData* mb;
-        int   stat;
+        SRTSOCKET id;       // SRT套接字ID
+        SocketData* mb;     // 套接字属性
+        int   stat;         // 状态
         int   code;
     };
 
@@ -257,6 +261,8 @@ public:
 
 private:
     // For Backup, sending all previous packet
+
+    // 备份模式发送所有先前已发送的包
     int sendBackupRexmit(srt::CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
@@ -265,19 +271,26 @@ private:
     /// @param[in,out] w_wipeme array of sockets to remove from group
     /// @param[in,out] w_pendingLinks array of sockets pending for connection
     /// @returns true if d is idle (standby), false otherwise
+
+    // 检查指定套接字是否处于空闲状态
     bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pendingLinks);
 
 
     /// This function checks if the member has just become idle (check if sender buffer is empty) to send a KEEPALIVE immidiatelly.
     /// @todo Check it is some abandoned logic.
+    
+    // 检查指定套接字是否处于空闲状态
     void sendBackup_CheckIdleTime(gli_t w_d);
     
     /// Qualify states of member links.
     /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
     /// @param[out] w_sendBackupCtx  the context will be updated with state qualifications
     /// @param[in] currtime          current timestamp
+    
+    // 查询指定套接字状态
     void sendBackup_QualifyMemberStates(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 
+    // 
     void sendBackup_AssignBackupState(srt::CUDT& socket, BackupMemberState state, const steady_clock::time_point& currtime);
 
     /// Qualify the state of the active link: fresh, stable, unstable, wary.

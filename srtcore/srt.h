@@ -152,14 +152,23 @@ typedef SYSSOCKET UDPSOCKET;
 // Values returned by srt_getsockstate()
 // SRTSOCKET状态
 typedef enum SRT_SOCKSTATUS {
+   // 初始化
    SRTS_INIT = 1,
+   // open 
    SRTS_OPENED,
+   // listen
    SRTS_LISTENING,
+   // connect
    SRTS_CONNECTING,
+   // connect success
    SRTS_CONNECTED,
+   // 连接异常
    SRTS_BROKEN,
+   // closing
    SRTS_CLOSING,
+   // 关闭成功
    SRTS_CLOSED,
+   // 套接字不存在
    SRTS_NONEXIST
 } SRT_SOCKSTATUS;
 
@@ -224,6 +233,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
+   // 启用连接绑定
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (ENABLE_BONDING)
    SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
@@ -975,15 +985,23 @@ typedef enum SRT_MemberStatus
     SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
 } SRT_MEMBERSTATUS;
 
+// SRT套接字组中的单个SRT套接字
 struct SRT_SocketGroupData_
 {
+	// SRTSOCKET
     SRTSOCKET id;
+	// 对端地址
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    SRT_SOCKSTATUS sockstate;
+	// SRTSOCKET状态
+	SRT_SOCKSTATUS sockstate;
+	// 权重
     uint16_t weight;
+	// 在组中的状态:pending / idle / running / broken
     SRT_MEMBERSTATUS memberstate;
+	// 
     int result;
-    int token;
+	// 用于校验
+	int token;
 };
 
 typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;

@@ -233,17 +233,27 @@ private:
     CCache& operator=(const CCache&);
 };
 
+// 状态信息
 class CInfoBlock
 {
 public:
+	// IP地址
     uint32_t m_piIP[4];          // IP address, machine read only, not human readable format.
-    int      m_iIPversion;       // Address family: AF_INET or AF_INET6.
-    uint64_t m_ullTimeStamp;     // Last update time.
-    int      m_iSRTT;            // Smoothed RTT.
-    int      m_iBandwidth;       // Estimated link bandwidth.
+	// IPv4 / IPv6
+	int      m_iIPversion;       // Address family: AF_INET or AF_INET6.
+	// 更新时间戳
+	uint64_t m_ullTimeStamp;     // Last update time.
+	// 平滑计算后的RTT
+	int      m_iSRTT;            // Smoothed RTT.
+	// 估算的带宽
+	int      m_iBandwidth;       // Estimated link bandwidth.
+	// 平均丢包率
     int      m_iLossRate;        // Average loss rate.
+    // 重排序距离 - 接收端接收顺序和发送端发送顺序之间的差异，衡量传输质量的一个指标 
     int      m_iReorderDistance; // Packet reordering distance.
+    // 内部包间隔 - 用于拥塞控制
     double   m_dInterval;        // Inter-packet time (Congestion Control).
+    // 拥塞控制窗口大小
     double   m_dCWnd;            // Congestion window size (Congestion Control).
 
 public:
@@ -262,6 +272,7 @@ public:
     /// @param [in] ver IP version
     /// @param [out] ip the result machine readable IP address in integer array
 
+	// IP地址转换
     static void convert(const sockaddr_any& addr, uint32_t ip[4]);
 };
 

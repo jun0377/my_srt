@@ -323,7 +323,7 @@ int srt::CUDTUnited::cleanup()
     return 0;
 }
 
-// 生成一个SRTSOCKET
+// 生成一个SRTSOCKET，其实就是生成了一个唯一的标识符
 SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
 {
     ScopedLock guard(m_IDLock);
@@ -332,6 +332,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
 
     // First problem: zero-value should be avoided by various reasons.
 
+	// 套接字值溢出，回滚
     if (sockval <= 0)
     {
         // We have a rollover on the socket value, so
@@ -427,7 +428,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
     return sockval;
 }
 
-// 创建一个SRTSOCKET
+// 创建一个SRTSOCKET，其实就是分配了一个ID，并初始化相关资源
 SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
 {
     // XXX consider using some replacement of std::unique_ptr
@@ -446,6 +447,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
+	// 生成一个唯一标识
     try
     {
         ns->m_SocketID = generateSocketID();
@@ -455,15 +457,20 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         delete ns;
         throw;
     }
+	// 套接字状态: 初始化
     ns->m_Status          = SRTS_INIT;
+	// 监听套接字初始化
     ns->m_ListenSocket    = 0;
+	// local套接字ID
     ns->core().m_SocketID = ns->m_SocketID;
+	// cache，用于缓存网络质量信息
     ns->core().m_pCache   = m_pCache;
 
     try
     {
         HLOGC(smlog.Debug, log << CONID(ns->m_SocketID) << "newSocket: mapping socket " << ns->m_SocketID);
 
+		// 使用一个map来维护所有的SRTSOCKET
         // protect the m_Sockets structure.
         ScopedLock cs(m_GlobControlLock);
         m_Sockets[ns->m_SocketID] = ns;
@@ -929,6 +936,7 @@ SRT_SOCKSTATUS srt::CUDTUnited::getStatus(const SRTSOCKET u)
     return i->second->getStatus();
 }
 
+// 将SRT套接字和UDP通道关联起来
 int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
 {
     ScopedLock cg(s->m_ControlLock);
@@ -951,6 +959,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     s->m_Status = SRTS_OPENED;
 
     // copy address information of local node
+    // 获取关联的本地地址
     s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
 
     return 0;
@@ -995,6 +1004,7 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
     if (u == UDT::INVALID_SOCK)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
+	// 从map中查找SRT套接字
     CUDTSocket* s = locateSocket(u);
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
@@ -1024,8 +1034,11 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
 
     // [[using assert(s->m_Status == OPENED)]]; // (still, unchanged)
 
+	// 设置为listening状态
     s->core().setListenState(); // propagates CUDTException,
                                 // if thrown, remains in OPENED state if so.
+
+	// 更新状态为listening
     s->m_Status = SRTS_LISTENING;
 
     return 0;
@@ -3485,6 +3498,7 @@ int srt::CUDT::cleanup()
     return uglobal().cleanup();
 }
 
+// 创建SRTSOCKET，并初始化相关资源
 SRTSOCKET srt::CUDT::socket()
 {
     uglobal().startup();

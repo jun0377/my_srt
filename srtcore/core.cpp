@@ -1011,6 +1011,7 @@ void srt::CUDT::open()
     m_bOpened = true;
 }
 
+// 设置为listening状态
 void srt::CUDT::setListenState()
 {
     ScopedLock cg(m_ConnectionLock);

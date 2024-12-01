@@ -794,7 +794,9 @@ private:
 
 private: // Identification
     CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
+    // local套接字ID
     SRTSOCKET           m_SocketID;                     // UDT socket number
+    // 对端套接字ID
     SRTSOCKET           m_PeerID;                       // Peer ID, for multiplexer
 
     // HSv4 (legacy handshake) support)
@@ -829,6 +831,7 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
+    // listening
     sync::atomic<bool> m_bListening;             // If the UDT entity is listening to connection
     sync::atomic<bool> m_bConnecting;            // The short phase when connect() is called but not yet completed
     sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
