@@ -90,6 +90,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
+	// 广播模式,后续自行添加主备模式/平衡模式进行测试
     int gtype = SRT_GTYPE_BROADCAST;
     size_t i;
     for (i = 0; i < SIZE(group_types); ++i)
@@ -99,7 +100,10 @@ int main(int argc, char** argv)
             break;
         }
 
+	// 非阻塞模式
     int is_nonblocking = 0;
+
+	// 组中的成员个数，既然是测试组连接，组当然至少要有两个成员
     size_t nmemb = argc - 2;
     if (nmemb < 2)
     {
@@ -107,6 +111,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
+	// 参数列表中的最后一个参数
     if (nmemb % 2)
     {
         // Last argument is then optionset
@@ -118,6 +123,7 @@ int main(int argc, char** argv)
 
     nmemb /= 2;
 
+	// 开启SRT实例
     printf("srt startup\n");
     srt_startup();
 
@@ -129,6 +135,7 @@ int main(int argc, char** argv)
     SRT_SOCKGROUPDATA* grpdata = NULL;
     SRT_SOCKGROUPCONFIG* grpconfig = calloc(nmemb, sizeof (SRT_SOCKGROUPCONFIG));
 
+	// 创建一个SRTSOCKET组，目前创建的是一个广播组
     printf("srt group\n");
     ss = srt_create_group(gtype);
     if (ss == SRT_ERROR)
@@ -139,6 +146,7 @@ int main(int argc, char** argv)
 
     const int B = 2;
 
+	// 创建SRT端点: 本地地址 + 对端地址,构成了一组端点
     for (i = 0; i < nmemb; ++i)
     {
         printf("srt remote address #%zi\n", i);
@@ -151,9 +159,11 @@ int main(int argc, char** argv)
             goto end;
         }
 
+		// 创建SRT端点
         grpconfig[i] = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
     }
 
+	// 非阻塞模式，创建epoll实例，关注可写和异常事件
     if (is_nonblocking)
     {
         int blockingmode = 0;
@@ -167,6 +177,8 @@ int main(int argc, char** argv)
     // Note: this function unblocks at the moment when at least one connection
     // from the array is established (no matter which one); the others will
     // continue in background.
+
+	// 组中的任意成员建立连接成功，这个函数就会返回；其它成员的连接在后台执行
     st = srt_connect_group(ss, grpconfig, nmemb);
     if (st == SRT_ERROR)
     {

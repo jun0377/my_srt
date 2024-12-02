@@ -268,7 +268,8 @@ struct CSrtConfig: CSrtMuxerConfig
     // 控制发送端丢包决策的延迟参数，主动丢弃过期数据包
     int      iSndDropDelay; // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool     bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    int      iGroupConnect;    // 1 - allow group connections
+	// 是否支持组连接模式
+	int      iGroupConnect;    // 1 - allow group connections
     int      iPeerIdleTimeout_ms; // Timeout for hearing anything from the peer (ms).
     uint32_t uMinStabilityTimeout_ms;
     int      iRetransmitAlgo;

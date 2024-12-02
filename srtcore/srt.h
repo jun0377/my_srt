@@ -1008,12 +1008,19 @@ typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
 
 typedef struct SRT_GroupMemberConfig_
 {
+	// SRT套接字ID
     SRTSOCKET id;
+	// 源地址
     struct sockaddr_storage srcaddr;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    uint16_t weight;
-    SRT_SOCKOPT_CONFIG* config;
+	// 对端地址
+	struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+	// 权重
+	uint16_t weight;
+	// SRT套接字选项
+	SRT_SOCKOPT_CONFIG* config;
+	// 错误码
     int errorcode;
+	// 用于校验
     int token;
 } SRT_SOCKGROUPCONFIG;
 

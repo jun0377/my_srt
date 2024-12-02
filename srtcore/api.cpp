@@ -954,8 +954,11 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+	// 开启一个UDT实例，初始化相关资源
     s->core().open();
-    updateMux(s, name);
+	// UDP通道复用
+	updateMux(s, name);
+	// 更新状态为SRTS_OPENED
     s->m_Status = SRTS_OPENED;
 
     // copy address information of local node
@@ -1089,14 +1092,17 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
     return accept(lsn, ((sockaddr*)&dummy), (&outlen));
 }
 
+// 接受连接
 SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
+	// 参数校验
     if (pw_addr && !pw_addrlen)
     {
         LOGC(cnlog.Error, log << "srt_accept: provided address, but address length parameter is missing");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+	// 从map中查找监听套接字
     CUDTSocket* ls = locateSocket(listen);
 
     if (ls == NULL)
@@ -1106,6 +1112,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     }
 
     // the "listen" socket must be in LISTENING status
+    // 只有处于SRTS_LISTENING状态的套接字，才允许accept
     if (ls->m_Status != SRTS_LISTENING)
     {
         LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
@@ -1113,6 +1120,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     }
 
     // no "accept" in rendezvous connection setup
+    // 交会连接模式
     if (ls->core().m_config.bRendezvous)
     {
         LOGC(cnlog.Fatal,
@@ -1127,20 +1135,26 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     bool      accepted = false;
 
     // !!only one connection can be set up each time!!
+
+	// 每次仅处理一个连接请求
     while (!accepted)
     {
         UniqueLock accept_lock(ls->m_AcceptLock);
         CSync      accept_sync(ls->m_AcceptCond, accept_lock);
 
+		// 监听套接字异常，设置accepted为true以退出当前循环
         if ((ls->m_Status != SRTS_LISTENING) || ls->core().m_bBroken)
         {
             // This socket has been closed.
             accepted = true;
         }
+		// 有待处理的连接请求
         else if (ls->m_QueuedSockets.size() > 0)
         {
+        	// 从队列中取出一个连接请求
             map<SRTSOCKET, sockaddr_any>::iterator b = ls->m_QueuedSockets.begin();
 
+			// 检查输出参数缓冲区空间是否足够
             if (pw_addr != NULL && pw_addrlen != NULL)
             {
                 // Check if the length of the buffer to fill the name in
@@ -1154,22 +1168,28 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
                 }
             }
 
+			// SRTSOCKET
             u = b->first;
+			// 从队列中删除该连接请求
             ls->m_QueuedSockets.erase(b);
             accepted = true;
         }
+		// 交会连接模式
         else if (!ls->core().m_config.bSynRecving)
         {
             accepted = true;
         }
 
+		// 没有待处理的连接请求，休眠，等待srt::CUDTUnited::newConnection唤醒
         if (!accepted && (ls->m_Status == SRTS_LISTENING))
             accept_sync.wait();
 
+		// 从休眠中唤醒后，仍然没有待处理的连接请求，更新epoll状态
         if (ls->m_QueuedSockets.empty())
             m_EPoll.update_events(listen, ls->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
     }
 
+	// 连接请求中携带的是一个非法SRTSOCKET，并且不是交会连接模式，抛出异常
     if (u == CUDT::INVALID_SOCK)
     {
         // non-blocking receiving, no connection available
@@ -1184,6 +1204,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
     }
 
+	// 从map中查找UDTSOCKET
     CUDTSocket* s = locateSocket(u);
     if (s == NULL)
     {
@@ -1192,26 +1213,39 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     }
 
     // Set properly the SRTO_GROUPCONNECT flag
+
+	// 组连接标识位初始化为false
     s->core().m_config.iGroupConnect = 0;
 
     // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
     // and the already accepted socket has successfully joined
     // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
+
+	// 检查监听套接字是否开启了组连接模式
 #if ENABLE_BONDING
+
+	// 监听套接字开启和组连接模式
     if (ls->core().m_config.iGroupConnect == 1 && s->m_GroupOf)
     {
         // Put a lock to protect the group against accidental deletion
         // in the meantime.
         ScopedLock glock(m_GlobControlLock);
-        // Check again; it's unlikely to happen, but
+
+		// Check again; it's unlikely to happen, but
         // it's a theoretically possible scenario
+
+		// 更新UDTSOCKET为组连接模式
         if (s->m_GroupOf)
         {
+        	// SRTSOCKET组ID
             u                                = s->m_GroupOf->m_GroupID;
+			// 更新UDTSOCKET组连接标识
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
 
             // Mark the beginning of the connection at the moment
             // when the group ID is returned to the app caller
+
+			// 返回建立组连接时的时间戳
             s->m_GroupOf->m_stats.tsLastSampleTime = steady_clock::now();
         }
         else
@@ -1223,6 +1257,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 
     ScopedLock cg(s->m_ControlLock);
 
+	// 对端地址和地址长度
     if (pw_addr != NULL && pw_addrlen != NULL)
     {
         memcpy((pw_addr), s->m_PeerAddr.get(), s->m_PeerAddr.size());
@@ -1335,6 +1370,8 @@ int srt::CUDTUnited::singleMemberConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* gd)
 }
 
 // [[using assert(pg->m_iBusy > 0)]]
+
+// 组connect
 int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int arraysize)
 {
     CUDTGroup& g = *pg;
@@ -1342,6 +1379,8 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
     // Check and report errors on data brought in by srt_prepare_endpoint,
     // as the latter function has no possibility to report errors.
+
+	// 参数校验
     for (int tii = 0; tii < arraysize; ++tii)
     {
         if (targets[tii].srcaddr.ss_family != targets[tii].peeraddr.ss_family)
@@ -1362,10 +1401,19 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
     // group is already OPENED returns immediately, regardless if the
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
+
+	// 如果状态切换到 OPENED
+	// 则阻塞模式必须等待以进行连接
+	// 当组已经处于 OPENED 状态时，进行连接会立即返回，无论该连接是成功还是失败
+
+	// 组的open状态：组中任意成员连接建立成功时，都认为组处于open状态
     bool       block_new_opened = !g.m_bOpened && g.m_bSynRecving;
+	// 判断组是否为空
     const bool was_empty        = g.groupEmpty();
 
     // In case the group was retried connection, clear first all epoll readiness.
+
+	// 组连接前，首先清除所有epoll状态
     const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
     if (was_empty || ncleared)
     {
@@ -1380,7 +1428,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
     SRTSOCKET retval = -1;
 
     int eid           = -1;
+	// 只关注可写和异常事件
     int connect_modes = SRT_EPOLL_CONNECT | SRT_EPOLL_ERR;
+	// 创建epoll实例
     if (block_new_opened)
     {
         // Create this eid only to block-wait for the first
@@ -1396,12 +1446,17 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
           log << "groupConnect: will connect " << arraysize << " links and "
               << (block_new_opened ? "BLOCK until any is ready" : "leave the process in background"));
 
+	// 遍历所有端点
     for (int tii = 0; tii < arraysize; ++tii)
     {
+    	// 对端地址
         sockaddr_any target_addr(targets[tii].peeraddr);
-        sockaddr_any source_addr(targets[tii].srcaddr);
-        SRTSOCKET&   sid_rloc = targets[tii].id;
-        int&         erc_rloc = targets[tii].errorcode;
+		// 本地地址
+		sockaddr_any source_addr(targets[tii].srcaddr);
+		// 组ID
+		SRTSOCKET&   sid_rloc = targets[tii].id;
+		// 错误码初始化为SUCCESS
+		int&         erc_rloc = targets[tii].errorcode;
         erc_rloc              = SRT_SUCCESS; // preinitialized
         HLOGC(aclog.Debug, log << "groupConnect: taking on " << sockaddr_any(targets[tii].peeraddr).str());
 
@@ -1409,14 +1464,18 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
         // NOTE: After calling newSocket, the socket is mapped into m_Sockets.
         // It must be MANUALLY removed from this list in case we need it deleted.
+
+		// 生成一个SRTSOCKET
         SRTSOCKET sid = newSocket(&ns);
 
+		// 钩子函数
         if (pg->m_cbConnectHook)
         {
             // Derive the connect hook by the socket, if set on the group
             ns->core().m_cbConnectHook = pg->m_cbConnectHook;
         }
 
+		// 套接字选项
         SRT_SocketOptionObject* config = targets[tii].config;
 
         // XXX Support non-blocking mode:
@@ -1431,6 +1490,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         string error_reason SRT_ATR_UNUSED;
         try
         {
+        	// 设置套接字选项
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
@@ -1447,6 +1507,8 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
             error_reason = "bound address";
             // We got it. Bind the socket, if the source address was set
+
+			// 将SRTSOCKET和UDP通道关联起来，相当于和对端建立连接
             if (!source_addr.empty())
                 bind(ns, source_addr);
         }
@@ -1468,6 +1530,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
+		// 生成套接字在组中的相关信息
         srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
@@ -1500,6 +1563,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             // end of this function. But it might be simultaneously requested closed.
             bool proceed = true;
 
+			// 检查错误码
             if (targets[tii].errorcode != SRT_SUCCESS)
             {
                 HLOGC(aclog.Debug,
@@ -1507,6 +1571,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 proceed = false;
             }
 
+			// 检查是否正在关闭
             if (g.m_bClosing)
             {
                 HLOGC(aclog.Debug,
@@ -1514,11 +1579,16 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 proceed = false;
             }
 
+			// 一切正常，将新的套接字添加到组中
             if (proceed)
             {
+            	// 向组中添加一个套接字
                 CUDTGroup::SocketData* f = g.add(data);
+				// 组中的新成员
                 ns->m_GroupMemberData    = f;
+				// 套接字组句柄
                 ns->m_GroupOf            = &g;
+				// 权重
                 f->weight                = targets[tii].weight;
                 HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
             }
@@ -1541,15 +1611,20 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         ns->core().m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
         */
 
+		// 初始序列号
         int isn = g.currentSchedSequence();
 
         // Set it the groupconnect option, as all in-group sockets should have.
+
+		// 设置组连接标识
         ns->core().m_config.iGroupConnect = 1;
 
         // Every group member will have always nonblocking
         // (this implies also non-blocking connect/accept).
         // The group facility functions will block when necessary
         // using epoll_wait.
+
+		// 关闭同步发送/接受，使用异步模式
         ns->core().m_config.bSynRecving = false;
         ns->core().m_config.bSynSending = false;
 
@@ -1558,6 +1633,8 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // it may still be needed for the further check if the redundant
         // connection succeeded or failed and whether the new socket is
         // ready to use or needs to be closed.
+
+		// 添加epoll实例
         epoll_add_usock_INTERNAL(g.m_SndEID, ns, &connect_modes);
         epoll_add_usock_INTERNAL(g.m_RcvEID, ns, &connect_modes);
 
@@ -1868,6 +1945,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 }
 #endif
 
+// 套接字组建立连接
 int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
 {
     ScopedLock cg(s->m_ControlLock);
@@ -3012,6 +3090,7 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
     return false;
 }
 
+// UDP通道复用
 void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
     ScopedLock cg(m_GlobControlLock);
@@ -3540,22 +3619,31 @@ srt::CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
+
+// 创建一个指定类型的组
 srt::CUDTGroup& srt::CUDT::newGroup(const int type)
 {
+	// 生成唯一标识id
     const SRTSOCKET id = uglobal().generateSocketID(true);
 
     // Now map the group
+    // 创建一个套接字组，添加到map中
     return uglobal().addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
+// 创建一个指定类型的组: 广播组/主备组/平衡模式组...
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
 {
     // Doing the same lazy-startup as with srt_create_socket()
+
+	// 和srt_create_socket()相同逻辑
     uglobal().startup();
 
     try
     {
         srt::sync::ScopedLock globlock(uglobal().m_GlobControlLock);
+
+		// 创建一个指定类型的组，添加到对应的map中
         return newGroup(gt).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
@@ -3787,11 +3875,14 @@ int srt::CUDT::connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname,
 }
 
 #if ENABLE_BONDING
+// 组connect
 int srt::CUDT::connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG targets[], int arraysize)
 {
-    if (arraysize <= 0)
+	// 参数校验
+	if (arraysize <= 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
+	// 检查是否是一个组ID
     if ((grp & SRTGROUP_MASK) == 0)
     {
         // connectLinks accepts only GROUP id, not socket id.

@@ -64,6 +64,7 @@ int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* c
     return 0;
 }
 
+// 组connect
 int srt_connect_group(SRTSOCKET group,
     SRT_SOCKGROUPCONFIG name[], int arraysize)
 {
@@ -82,18 +83,25 @@ int srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT:
 
 #endif
 
+// 创建一对SRT端点:  local端点 - 对端端点
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
 {
+	// 套接字组配置
     SRT_SOCKGROUPCONFIG data;
+
+	// 初始化错误码
 #if ENABLE_BONDING
     data.errorcode = SRT_SUCCESS;
 #else
     data.errorcode = SRT_EINVOP;
 #endif
+
     data.id = -1;
     data.token = -1;
     data.weight = 0;
     data.config = NULL;
+
+	// 源地址
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -102,6 +110,8 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
         // Still set the family according to the target address
         data.srcaddr.ss_family = dst->sa_family;
     }
+
+	// 对端地址
     memcpy(&data.peeraddr, dst, namelen);
     return data;
 }

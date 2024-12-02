@@ -396,6 +396,7 @@ srt::CUDT::~CUDT()
     delete m_pRNode;
 }
 
+// 设置套接字选项
 void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     if (m_bBroken || m_bClosing)
@@ -955,6 +956,7 @@ void srt::CUDT::clearData()
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
+// 开启一个UDP实例，初始化相关资源
 void srt::CUDT::open()
 {
     ScopedLock cg(m_ConnectionLock);

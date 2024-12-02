@@ -732,9 +732,11 @@ private:
     // from the first delivering socket will be taken as a good deal.
     sync::atomic<int32_t> m_RcvBaseSeqNo;
 
+	// 当组中的任意连接建立成功时，就将其设置为true
     bool m_bOpened;    // Set to true when at least one link is at least pending
     // 套接字组连接状态，只要已连接的SRT套接字，就设置为true
     bool m_bConnected; // Set to true on first link confirmed connected
+    // 套接字组被关闭
     bool m_bClosing;
 
     // There's no simple way of transforming config

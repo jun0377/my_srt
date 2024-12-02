@@ -156,7 +156,7 @@ public:
 #if ENABLE_BONDING
 	// SRT套接字组，NULL表示当前陶杰组不属于哪个组
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-    // 当前套接字属于哪个组，NULL表示不属于任何组
+    // 套接字组句柄，当前套接字属于哪个组，NULL表示不属于任何组
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
@@ -166,6 +166,7 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
+	// 待处理的连接请求
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
 
     sync::Condition m_AcceptCond; //< used to block "accept" call
@@ -343,15 +344,22 @@ public:
 
 #if ENABLE_BONDING
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
+
+	// 添加一个组到map中
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
         // This only ensures that the element exists.
         // If the element was newly added, it will be NULL.
-        CUDTGroup*& g = m_Groups[id];
+
+		// 根据ID查找组
+		CUDTGroup*& g = m_Groups[id];
+		// 组不存在，创建之
         if (!g)
         {
             // This is a reference to the cell, so it will
             // rewrite it into the map.
+
+			// 创建一个组
             g = new CUDTGroup(type);
         }
 
@@ -411,11 +419,13 @@ private:
     sockets_t m_Sockets;
 
 #if ENABLE_BONDING
+	// 使用map来保存所有的SRTSOCKET组
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     groups_t m_Groups;
 #endif
 
+	// 同步访问保护
     sync::Mutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation

@@ -91,6 +91,7 @@ int main(int argc, char** argv)
     // Since now, srt_cleanup() must be done before exiting.
 
 	// 创建SRT套接字，并初始化相关资源
+	// 创建SRT套接字时，并不区分是一个组还是单个SRTSOCKET
     printf("srt socket\n");
     ss = srt_create_socket();
     if (ss == SRT_ERROR)
@@ -132,7 +133,7 @@ int main(int argc, char** argv)
     printf("srt setsockflag: groupconnect\n");
     srt_setsockflag(ss, SRTO_GROUPCONNECT, &yes, sizeof yes);
 
-	// 将SRTSOCKET和UDP通道相关联
+	// 将SRTSOCKET和UDP通道相关联，这一步也不区分是一个组还是单个SRTSOCKET
     printf("srt bind\n");
     st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
     if (st == SRT_ERROR)
@@ -158,7 +159,7 @@ int main(int argc, char** argv)
     // simultaneously - it doesn't matter here if particular connection
     // will belong to a bonding group or will be a single-socket connection.
 
-	// listen
+	// listen，同样不区分是一个组还是单个SRTSOCKET
     st = srt_listen(ss, 10);
     if (st == SRT_ERROR)
     {
@@ -189,7 +190,7 @@ int main(int argc, char** argv)
             goto end;
     }
 
-	// 接收连接
+	// 接受连接
     printf("srt accept\n");
     int addr_size = sizeof their_addr;
     their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
@@ -244,6 +245,7 @@ int main(int argc, char** argv)
         mc.grpdata = grpdata;
         mc.grpdata_size = N;
 
+		// 非阻塞模式下，srt_recvmsg2也不会阻塞，因此需要在epoll中阻塞
         if (is_nonblocking)
         {
             // Block in epoll as srt_recvmsg2 will not block.
@@ -264,9 +266,11 @@ int main(int argc, char** argv)
         if (!isgroup)
             continue;
 
+		// 组异常
         if (!mc.grpdata)
             printf("Group status: [%zi] members > %zi, can't handle.\n", mc.grpdata_size, N);
-        else
+		// 查询组中成员的状态
+		else
         {
             printf(" ++ Group status [%zi]: ", mc.grpdata_size);
             size_t z;
