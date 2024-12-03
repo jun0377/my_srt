@@ -67,8 +67,11 @@ class CRendezvousQueue;
 class CUDTGroup;
 
 
+// 描述一个EPOLL实例
 class CEPollDesc
 {
+
+	// epoll实例ID
 #ifdef __GNUG__
    const int m_iID;                                // epoll ID
 #else
@@ -76,6 +79,7 @@ class CEPollDesc
 #endif
    struct Wait;
 
+	// 事件通知，记录对应事件和对应的SRTSOCKET
    struct Notice: public SRT_EPOLL_EVENT
    {
        Wait* parent;
@@ -92,10 +96,13 @@ class CEPollDesc
    /// * The events currently being on
    typedef std::list<Notice> enotice_t;
 
+	// epoll事件，包含关注的事件/触发的事件/事件清除等功能
    struct Wait
    {
        /// Events the subscriber is interested with. Only those will be
        /// regarded when updating event flags.
+
+	   // 需要关注的epoll event
        int32_t watch;
 
        /// Which events should be edge-triggered. When the event isn't
@@ -103,12 +110,16 @@ class CEPollDesc
        /// it means that the event is to be waited for persistent state
        /// if this flag is not present here, and for edge trigger, if
        /// the flag is present here.
+
+	   // watch中边缘触发的事件
        int32_t edge;
 
        /// The current persistent state. This is usually duplicated in
        /// a dedicated state object in `m_USockEventNotice`, however the state
        /// here will stay forever as is, regardless of the edge/persistent
        /// subscription mode for the event.
+
+	   // 持久性存储的状态值，比如记录socket的状态/事件类型...
        int32_t state;
 
        /// The iterator to `m_USockEventNotice` container that contains the
@@ -116,6 +127,7 @@ class CEPollDesc
        /// `nullNotice()` if there is no such object.
        enotice_t::iterator notit;
 
+        // 构造函数
        Wait(explicit_t<int32_t> sub, explicit_t<int32_t> etr, enotice_t::iterator i)
            :watch(sub)
            ,edge(etr)
@@ -124,6 +136,7 @@ class CEPollDesc
        {
        }
 
+        // 返回边缘触发的事件
        int edgeOnly() { return edge & watch; }
 
        /// Clear all flags for given direction from the notices
@@ -132,6 +145,8 @@ class CEPollDesc
        /// @param direction event type that has to be cleared
        /// @return true, if this cleared the last event (the caller
        /// want to remove the subscription for this socket)
+
+       // 清除给定方向的事件
        bool clear(int32_t direction)
        {
            if (watch & direction)
@@ -154,17 +169,21 @@ std::string DisplayEpollWatch();
 #endif
 
    /// Sockets that are subscribed for events in this eid.
+   // 事件订阅管理，使用一个map来维护所有事件及对应的SRTSOCKET
    ewatch_t m_USockWatchState;
 
    /// Objects representing changes in SRT sockets.
    /// Objects are removed from here when an event is registerred as edge-triggered.
    /// Otherwise it is removed only when all events as per subscription
    /// are no longer on.
+
+   // 事件list, 使用一个list来记录所有已触发的事件和对应的SRTSOCKET
    enotice_t m_USockEventNotice;
 
    // Special behavior
    int32_t m_Flags;
 
+    // 事件迭代器
    enotice_t::iterator nullNotice() { return m_USockEventNotice.end(); }
 
    // Only CEPoll class should have access to it.
@@ -182,15 +201,23 @@ std::string DisplayEpollWatch();
    static const int32_t EF_NOCHECK_EMPTY = 1 << 0;
    static const int32_t EF_CHECK_REP = 1 << 1;
 
+   // 获取flags
    int32_t flags() const { return m_Flags; }
+   // 设置flags
    bool flags(int32_t f) const { return (m_Flags & f) != 0; }
+   // flags置位
    void set_flags(int32_t flg) { m_Flags |= flg; }
+   // flags位清零
    void clr_flags(int32_t flg) { m_Flags &= ~flg; }
 
    // Container accessors for ewatch_t.
+
+   // 关注的事件是否空
    bool watch_empty() const { return m_USockWatchState.empty(); }
+   // 获取指定SRTSOCKET的关注事件
    Wait* watch_find(SRTSOCKET sock)
    {
+        // 从map中查找
        ewatch_t::iterator i = m_USockWatchState.find(sock);
        if (i == m_USockWatchState.end())
            return NULL;
@@ -198,20 +225,31 @@ std::string DisplayEpollWatch();
    }
 
    // Container accessors for enotice_t.
+
+   // 已触发事件起始迭代器
    enotice_t::iterator enotice_begin() { return m_USockEventNotice.begin(); }
+   // 已触发事件终止迭代器
    enotice_t::iterator enotice_end() { return m_USockEventNotice.end(); }
+   // 已触发事件的常量起始迭代器
    enotice_t::const_iterator enotice_begin() const { return m_USockEventNotice.begin(); }
+   // 已触发事件的常量终止迭代器
    enotice_t::const_iterator enotice_end() const { return m_USockEventNotice.end(); }
+   // 触发事件列表是否为空
    bool enotice_empty() const { return m_USockEventNotice.empty(); }
 
+    // 系统epoll实例ID
    const int m_iLocalID;                           // local system epoll ID
+   // 系统套接字集合
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
 
+    // 添加需要关注的事件
    std::pair<ewatch_t::iterator, bool> addWatch(SRTSOCKET sock, explicit_t<int32_t> events, explicit_t<int32_t> et_events)
    {
+        // 插入到map中
         return m_USockWatchState.insert(std::make_pair(sock, Wait(events, et_events, nullNotice())));
    }
 
+    // 添加触发的事件
    void addEventNotice(Wait& wait, SRTSOCKET sock, int events)
    {
        // `events` contains bits to be set, so:
@@ -220,6 +258,7 @@ std::string DisplayEpollWatch();
        // 2. If it exists, only set the bits from `events`.
        // ASSUME: 'events' is not 0, that is, we have some readiness
 
+        // 事件不存在，创建之
        if (wait.notit == nullNotice()) // No notice object
        {
            // Add new event notice and bind to the wait object.
@@ -230,23 +269,31 @@ std::string DisplayEpollWatch();
        }
 
        // We have an existing event notice, so update it
+
+       // 事件已存在，更新之
        wait.notit->events |= events;
    }
 
    // This function only updates the corresponding event notice object
    // according to the change in the events.
+
+   // 更新事件
    void updateEventNotice(Wait& wait, SRTSOCKET sock, int events, bool enable)
    {
+        // 启用事件
        if (enable)
        {
+            // 添加触发的事件
            addEventNotice(wait, sock, events);
        }
+       // 禁用事件
        else
        {
            removeExcessEvents(wait, ~events);
        }
    }
 
+    // 移除某个socket所有订阅事件和已触发的事件
    void removeSubscription(SRTSOCKET u)
    {
        std::map<SRTSOCKET, Wait>::iterator i = m_USockWatchState.find(u);
@@ -262,18 +309,21 @@ std::string DisplayEpollWatch();
        m_USockWatchState.erase(i);
    }
 
+    // 清除所有事件
    void clearAll()
    {
        m_USockEventNotice.clear();
        m_USockWatchState.clear();
    }
 
+    // 移除所有已触发的事件
    void removeExistingNotices(Wait& wait)
    {
        m_USockEventNotice.erase(wait.notit);
        wait.notit = nullNotice();
    }
 
+    // 移除已触发的事件
    void removeEvents(Wait& wait)
    {
        if (wait.notit == nullNotice())
@@ -285,12 +335,16 @@ std::string DisplayEpollWatch();
    // events that are NOT present in @a nevts, but
    // may be among subscriptions and therefore potentially
    // have an associated notice.
+
+   // 清除事件
    void removeExcessEvents(Wait& wait, int nevts)
    {
        // Update the event notice, should it exist
        // If the watch points to a null notice, there's simply
        // no notice there, so nothing to update or prospectively
        // remove - but may be something to add.
+       
+       // 事件不存在，直接返回
        if (wait.notit == nullNotice())
            return;
 
@@ -299,11 +353,14 @@ std::string DisplayEpollWatch();
        // 2. If there is a notice event, update by clearing the bits
        // 2.1. If this made resulting state to be 0, also remove the notice.
 
+        // 计算新的事件状态，通过与运算仅保留nevts中设置的事件
        const int newstate = wait.notit->events & nevts;
+       // 还有需要关注的事件
        if (newstate)
        {
            wait.notit->events = newstate;
        }
+       // 没有需要关注的事件了，移除epoll事件
        else
        {
            // If the new state is full 0 (no events),
@@ -312,12 +369,16 @@ std::string DisplayEpollWatch();
        }
    }
 
+    // 检查是否边缘触发了事件
    bool checkEdge(enotice_t::iterator i)
    {
        // This function should check if this event was subscribed
        // as edge-triggered, and if so, clear the event from the notice.
        // Update events and check edge mode at the subscriber
+
+       // 清除边缘触发事件
        i->events &= ~i->parent->edgeOnly();
+       // 边缘触发只需要通知一次，通知完成后，移除对象
        if(!i->events)
        {
            removeExistingNotices(*i->parent);
@@ -337,6 +398,8 @@ std::string DisplayEpollWatch();
    /// @retval (socket) Socket to be removed from subscriptions
    /// @retval SRT_INVALID_SOCK Nothing to be done (associated socket
    ///         still has other subscriptions)
+
+   // 清除特定事件的通知,清除成功后返回socket以便于进一步清理
    SRTSOCKET clearEventSub(enotice_t::iterator i, int event)
    {
        // We need to remove the notice and subscription
@@ -345,10 +408,14 @@ std::string DisplayEpollWatch();
 
        // This works merely like checkEdge, just on request to clear the
        // identified event, if found.
+
+       // 检查通知对象是否包含指定的事件
        if (i->events & event)
        {
            // The notice has a readiness flag on this event.
            // This means that there exists also a subscription.
+
+           // 清除事件，返回socket
            Wait* w = i->parent;
            if (w->clear(event))
                return i->fd;
@@ -358,6 +425,8 @@ std::string DisplayEpollWatch();
    }
 };
 
+
+// SRT Epoll封装
 class CEPoll
 {
 friend class srt::CUDT;
@@ -492,9 +561,11 @@ public: // for CUDT to acknowledge IO status
    int setflags(const int eid, int32_t flags);
 
 private:
+	// 用于生成唯一标识
    int m_iIDSeed;                            // seed to generate a new ID
    srt::sync::Mutex m_SeedLock;
 
+	// 使用map来维护所有的epoll实例
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
    mutable srt::sync::Mutex m_EPollLock;
 };

@@ -189,6 +189,8 @@ int main(int argc, char** argv)
     // In non-blocking mode the srt_connect function returns immediately
     // and displays only errors of the initial usage, not runtime errors.
     // These could be reported by epoll.
+
+	// 非阻塞模式下检查连接是否建立成功，当套接字可读时，说明连接建立成功
     if (is_nonblocking)
     {
         // WRITE-ready means connected
@@ -201,6 +203,8 @@ int main(int argc, char** argv)
     // In non-blocking mode now is the time to possibly change the epoll.
     // As this socket will be used for writing, it is in the right mode already.
     // Just set the right flag, as for non-blocking connect it needs RCVSYN.
+
+	// 设置为非阻塞模式
     if (is_nonblocking)
     {
         int blockingmode = 0;
@@ -215,19 +219,24 @@ int main(int argc, char** argv)
     // connect function exits do checks by srt_group_data to see if all links
     // are established, and if not, repeat it after srt_epoll_wait for the
     // SRT_EPOLL_UPDATE signal.
+
+    // 等待1s，增加连接建立成功的概率
     printf("sleeping 1s to make it probable all links are established\n");
     sleep(1);
 
     grpdata = calloc(nmemb, sizeof (SRT_SOCKGROUPDATA));
 
+    // 循环发送消息
     for (i = 0; i < 100; i++)
     {
         printf("srt sendmsg2 #%zd >> %s\n",i,message);
 
+        // 控制信息
         SRT_MSGCTRL mc = srt_msgctrl_default;
         mc.grpdata = grpdata;
         mc.grpdata_size = nmemb; // Set maximum known
 
+		// 非阻塞模式下等待可写时间
         if (is_nonblocking)
         {
             // Block in epoll as srt_recvmsg2 will not block.
@@ -235,6 +244,7 @@ int main(int argc, char** argv)
                 goto end;
         }
 
+        // 发送消息
         st = srt_sendmsg2(ss, message, sizeof message, &mc);
         if (st == SRT_ERROR)
         {
@@ -245,6 +255,7 @@ int main(int argc, char** argv)
         // Perform the group check. This can be used to recognize broken connections
         // and probably reestablish them by calling `srt_connect` for them. Here they
         // are only shown.
+
         printf(" ++ Group status [%zi]:", mc.grpdata_size);
         if (!mc.grpdata)
         {
@@ -252,6 +263,7 @@ int main(int argc, char** argv)
         }
         else
         {
+            // 检查组中连接的状态
             for (i = 0; i < mc.grpdata_size; ++i)
             {
                 printf( "[%zd] result=%d state=%s ", i, mc.grpdata[i].result,

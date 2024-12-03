@@ -94,14 +94,18 @@ srt::CEPoll::~CEPoll()
    releaseMutex(m_EPollLock);
 }
 
+// 创建一个epoll实例
 int srt::CEPoll::create(CEPollDesc** pout)
 {
    ScopedLock pg(m_EPollLock);
 
+	// 用于生成唯一标识
    if (++ m_iIDSeed >= 0x7FFFFFFF)
       m_iIDSeed = 0;
 
    // Check if an item already exists. Should not ever happen.
+
+   // epoll实例已存在，禁止重复创建
    if (m_mPolls.find(m_iIDSeed) != m_mPolls.end())
        throw CUDTException(MJ_SETUP, MN_NONE);
 

@@ -902,13 +902,20 @@ SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
+
+// SRT Epoll事件，对标准epoll事件进行封装
 typedef struct SRT_EPOLL_EVENT_STR
 {
+	// SRTSOCKET
     SRTSOCKET fd;
     int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
 #ifdef __cplusplus
+
+	// C++定义构造函数
+	
     SRT_EPOLL_EVENT_STR(SRTSOCKET s, int ev): fd(s), events(ev) {}
     SRT_EPOLL_EVENT_STR(): fd(-1), events(0) {} // NOTE: allows singular values, no init.
+
 #endif
 } SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
@@ -998,7 +1005,7 @@ struct SRT_SocketGroupData_
     uint16_t weight;
 	// 在组中的状态:pending / idle / running / broken
     SRT_MEMBERSTATUS memberstate;
-	// 
+	// 记录srt_connect的结果
     int result;
 	// 用于校验
 	int token;
