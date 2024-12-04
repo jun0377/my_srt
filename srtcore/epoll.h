@@ -67,7 +67,21 @@ class CRendezvousQueue;
 class CUDTGroup;
 
 
-// 描述一个EPOLL实例
+/*
+	描述一个EPOLL实例,包含: 
+		epoll实例ID
+		epoll实例相关的所有SRTSOCKET和SYSSOCKET
+			- 
+		触发的事件Notice
+			- 添加一个触发事件Notice
+			- 更新一个触发事件Notice
+			- 删除一个触发事件Notice
+			- 清除所有已触发的事件
+		关注的事件Wait 
+			- 添加SOCKET需要关注的事件
+			- 清除指定SOCKET关注的事件
+			- 清除所有关注的事件
+*/
 class CEPollDesc
 {
 
@@ -102,7 +116,7 @@ class CEPollDesc
        /// Events the subscriber is interested with. Only those will be
        /// regarded when updating event flags.
 
-	   // 需要关注的epoll event
+	   // 订阅的事件
        int32_t watch;
 
        /// Which events should be edge-triggered. When the event isn't
@@ -111,7 +125,7 @@ class CEPollDesc
        /// if this flag is not present here, and for edge trigger, if
        /// the flag is present here.
 
-	   // watch中边缘触发的事件
+	   // 订阅的边缘触发事件
        int32_t edge;
 
        /// The current persistent state. This is usually duplicated in
@@ -119,12 +133,14 @@ class CEPollDesc
        /// here will stay forever as is, regardless of the edge/persistent
        /// subscription mode for the event.
 
-	   // 持久性存储的状态值，比如记录socket的状态/事件类型...
+	   // 订阅事件的状态，已触发还没有通知用户的事件
        int32_t state;
 
        /// The iterator to `m_USockEventNotice` container that contains the
        /// event notice object for this subscription, or the value from
        /// `nullNotice()` if there is no such object.
+
+	   // 通知事件，即触发的事件
        enotice_t::iterator notit;
 
         // 构造函数
@@ -212,7 +228,7 @@ std::string DisplayEpollWatch();
 
    // Container accessors for ewatch_t.
 
-   // 关注的事件是否空
+   // 关注的事件是否空，即没有订阅的事件
    bool watch_empty() const { return m_USockWatchState.empty(); }
    // 获取指定SRTSOCKET的关注事件
    Wait* watch_find(SRTSOCKET sock)
@@ -237,7 +253,7 @@ std::string DisplayEpollWatch();
    // 触发事件列表是否为空
    bool enotice_empty() const { return m_USockEventNotice.empty(); }
 
-    // 系统epoll实例ID
+    // 系统epoll实例
    const int m_iLocalID;                           // local system epoll ID
    // 系统套接字集合
    std::set<SYSSOCKET> m_sLocals;            // set of local (non-UDT) descriptors
@@ -249,7 +265,7 @@ std::string DisplayEpollWatch();
         return m_USockWatchState.insert(std::make_pair(sock, Wait(events, et_events, nullNotice())));
    }
 
-    // 添加触发的事件
+    // 添加触发的事件，事件通知
    void addEventNotice(Wait& wait, SRTSOCKET sock, int events)
    {
        // `events` contains bits to be set, so:
@@ -336,7 +352,7 @@ std::string DisplayEpollWatch();
    // may be among subscriptions and therefore potentially
    // have an associated notice.
 
-   // 清除事件
+   // 清除多余的事件，只保留nevts中指定的事件
    void removeExcessEvents(Wait& wait, int nevts)
    {
        // Update the event notice, should it exist
@@ -369,7 +385,7 @@ std::string DisplayEpollWatch();
        }
    }
 
-    // 检查是否边缘触发了事件
+    // 检查是否是一个边缘触发事件，如果是则清除之，因为边缘触发只需要通知一次
    bool checkEdge(enotice_t::iterator i)
    {
        // This function should check if this event was subscribed
@@ -441,12 +457,16 @@ public: // for CUDTUnited API
 
    /// create a new EPoll.
    /// @return new EPoll ID if success, otherwise an error number.
+
+   // 创建一个SRT Epoll实例
    int create(CEPollDesc** ppd = 0);
 
 
    /// delete all user sockets (SRT sockets) from an EPoll
    /// @param [in] eid EPoll ID.
    /// @return 0 
+
+   // 清除一个SRT Epoll实例对应的所有socket
    int clear_usocks(int eid);
 
    /// add a system socket to an EPoll.
@@ -455,6 +475,7 @@ public: // for CUDTUnited API
    /// @param [in] events events to watch.
    /// @return 0 if success, otherwise an error number.
 
+	// 向epoll中添加一个系统套接字SYSSOCKET
    int add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
    /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
@@ -462,6 +483,7 @@ public: // for CUDTUnited API
    /// @param [in] s system socket ID.
    /// @return 0 if success, otherwise an error number.
 
+	// 删除一个SYSSOCKET
    int remove_ssock(const int eid, const SYSSOCKET& s);
    /// update a UDT socket events from an EPoll.
    /// @param [in] eid EPoll ID.
@@ -469,6 +491,7 @@ public: // for CUDTUnited API
    /// @param [in] events events to watch.
    /// @return 0 if success, otherwise an error number.
 
+	// 更新SRTSOCKET订阅的事件
    int update_usock(const int eid, const SRTSOCKET& u, const int* events);
 
    /// update a system socket events from an EPoll.
@@ -477,6 +500,7 @@ public: // for CUDTUnited API
    /// @param [in] events events to watch.
    /// @return 0 if success, otherwise an error number.
 
+	// 更新SYSSOCKET订阅的事件
    int update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
    /// wait for EPoll events or timeout.
@@ -488,6 +512,7 @@ public: // for CUDTUnited API
    /// @param [out] lwfds system file descriptors for writing.
    /// @return number of sockets available for IO.
 
+	// 等待事件或超时
    int wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds, std::set<SYSSOCKET>* lwfds);
 
    typedef std::map<SRTSOCKET, int> fmap_t;
@@ -501,6 +526,8 @@ public: // for CUDTUnited API
    /// @param report_by_exception if true, errors will result in exception intead of returning -1
    /// @retval -1 error occurred
    /// @retval >=0 number of ready sockets (actually size of `st`)
+
+   // 内部使用的SRTSOCKET wait   
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
    /// Empty subscription check - for internal use only.

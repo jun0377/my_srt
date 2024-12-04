@@ -717,6 +717,8 @@ enum SRT_EPOLL_OPT
    SRT_EPOLL_ACCEPT = SRT_EPOLL_IN,
 
    SRT_EPOLL_UPDATE = 0x10,
+
+   // 边缘触发Edge Trigger
    SRT_EPOLL_ET       = 1u << 31
 };
 // These are actually flags - use a bit container:
@@ -724,6 +726,8 @@ typedef int32_t SRT_EPOLL_T;
 
 // Define which epoll flags determine events. All others are special flags.
 #define SRT_EPOLL_EVENTTYPES (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_UPDATE | SRT_EPOLL_ERR)
+
+// 仅边缘触发
 #define SRT_EPOLL_ETONLY (SRT_EPOLL_UPDATE)
 
 enum SRT_EPOLL_FLAGS
@@ -731,12 +735,16 @@ enum SRT_EPOLL_FLAGS
     /// This allows the EID container to be empty when calling the waiting
     /// function with infinite time. This means an infinite hangup, although
     /// a socket can be added to this EID from a separate thread.
+
+	// 允许空容器等待
     SRT_EPOLL_ENABLE_EMPTY = 1,
 
     /// This makes the waiting function check if there is output container
     /// passed to it, and report an error if it isn't. By default it is allowed
     /// that the output container is 0 size or NULL and therefore the readiness
     /// state is reported only as a number of ready sockets from return value.
+
+	// 强制检查输出容器，确保一定有容器来接受事件通知
     SRT_EPOLL_ENABLE_OUTPUTCHECK = 2
 };
 
