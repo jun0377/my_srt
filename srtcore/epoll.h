@@ -230,7 +230,7 @@ std::string DisplayEpollWatch();
 
    // 关注的事件是否空，即没有订阅的事件
    bool watch_empty() const { return m_USockWatchState.empty(); }
-   // 获取指定SRTSOCKET的关注事件
+   // 获取指定SRTSOCKET的订阅事件
    Wait* watch_find(SRTSOCKET sock)
    {
         // 从map中查找
@@ -265,7 +265,7 @@ std::string DisplayEpollWatch();
         return m_USockWatchState.insert(std::make_pair(sock, Wait(events, et_events, nullNotice())));
    }
 
-    // 添加触发的事件，事件通知
+    // 添加通知事件
    void addEventNotice(Wait& wait, SRTSOCKET sock, int events)
    {
        // `events` contains bits to be set, so:
@@ -299,7 +299,7 @@ std::string DisplayEpollWatch();
         // 启用事件
        if (enable)
        {
-            // 添加触发的事件
+            // 添加通知事件
            addEventNotice(wait, sock, events);
        }
        // 禁用事件
@@ -531,12 +531,16 @@ public: // for CUDTUnited API
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
    /// Empty subscription check - for internal use only.
+
+   // 清空所有订阅事件
    bool empty(const CEPollDesc& d) const;
 
    /// Reports which events are ready on the given socket.
    /// @param mp socket event map retirned by `swait`
    /// @param sock which socket to ask
    /// @return event flags for given socket, or 0 if none
+
+   // 获取指定SRTSOCKET上的通知事件
    static int ready(const fmap_t& mp, SRTSOCKET sock)
    {
        fmap_t::const_iterator y = mp.find(sock);
@@ -550,12 +554,16 @@ public: // for CUDTUnited API
    /// @param sock which socket to ask
    /// @param event which events it should be ready for
    /// @return true if the given socket is ready for given event
+
+   // 检查指定SRTSOCKET上的指定事件
    static bool isready(const fmap_t& mp, SRTSOCKET sock, SRT_EPOLL_OPT event)
    {
        return (ready(mp, sock) & event) != 0;
    }
 
    // Could be a template directly, but it's now hidden in the imp file.
+
+   // 清除指定的通知事件
    void clear_ready_usocks(CEPollDesc& d, int direction);
 
    /// wait for EPoll events or timeout optimized with explicit EPOLL_ERR event and the edge mode option.
@@ -565,12 +573,14 @@ public: // for CUDTUnited API
    /// @param [in] msTimeOut timeout threshold, in milliseconds.
    /// @return total of available events in the epoll system (can be greater than fdsSize)
 
+   // epoll_wait等待事件或超时，只能用于SRTSOCKET，不可用于SYSSOCKET
    int uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 
    /// close and release an EPoll.
    /// @param [in] eid EPoll ID.
    /// @return 0 if success, otherwise an error number.
 
+   // 删除一个epoll实例
    int release(const int eid);
 
 public: // for CUDT to acknowledge IO status
@@ -583,6 +593,7 @@ public: // for CUDT to acknowledge IO status
    /// @param [in] enable true -> enable, otherwise disable
    /// @return -1 if invalid events, otherwise the number of changes
 
+   // 更新指定SRTSOCKET的订阅事件，响应更新通知事件	
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
    int setflags(const int eid, int32_t flags);

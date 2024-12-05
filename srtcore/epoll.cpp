@@ -193,10 +193,11 @@ int srt::CEPoll::clear_usocks(int eid)
    return 0;
 }
 
-
+// 清除指定的通知事件
 void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
-    if ((direction & ~SRT_EPOLL_EVENTTYPES) != 0)
+	// 参数检查
+	if ((direction & ~SRT_EPOLL_EVENTTYPES) != 0)
     {
         // This is internal function, so simply report an IPE on incorrect usage.
         LOGC(eilog.Error, log << "CEPoll::clear_ready_usocks: IPE, event flags exceed event types: " << direction);
@@ -204,12 +205,15 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
     }
     ScopedLock pg (m_EPollLock);
 
+	// 保存异常SRTSOCKET
     vector<SRTSOCKET> cleared;
 
+	// 遍历通知事件，
     CEPollDesc::enotice_t::iterator i = d.enotice_begin();
     while (i != d.enotice_end())
     {
         IF_HEAVY_LOGGING(SRTSOCKET subsock = i->fd);
+		// 清除特定通知事件
         SRTSOCKET rs = d.clearEventSub(i++, direction);
         // This function returns:
         // - a valid socket - if there are no other subscription after 'direction' was cleared
@@ -227,6 +231,7 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         }
     }
 
+	// 移除异常SRTSOCKET的订阅事件和通知事件
     for (size_t j = 0; j < cleared.size(); ++j)
         d.removeSubscription(cleared[j]);
 }
@@ -531,6 +536,8 @@ int srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* even
 int srt::CEPoll::setflags(const int eid, int32_t flags)
 {
     ScopedLock pg(m_EPollLock);
+
+	// 找到epoll实例
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -553,6 +560,7 @@ int srt::CEPoll::setflags(const int eid, int32_t flags)
     return oflags;
 }
 
+// epoll_wait等待事件或超时，只能用于SRTSOCKET，不可用于SYSSOCKET
 int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
     // It is allowed to call this function witn fdsSize == 0
@@ -567,23 +575,28 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
     {
         {
             ScopedLock pg(m_EPollLock);
+			
+			// 从map中找到对应的epoll实例对象
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
             CEPollDesc& ed = p->second;
 
+			// 没有订阅事件时，不允许等待，抛出异常
             if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
             {
                 // Empty EID is not allowed, report error.
                 throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
             }
 
+			// 必须检查通知事件缓存buffer，如果没有指定buffer，抛出异常
             if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
             {
                 // Empty EID is not allowed, report error.
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
+			// uwait不可用于SYSSOCKET
             if (!ed.m_sLocals.empty())
             {
                 // XXX Add error log
@@ -591,7 +604,10 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
+			// 通知事件个数
             int total = 0; // This is a list, so count it during iteration
+
+			// 遍历通知事件
             CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
             while (i != ed.enotice_end())
             {
@@ -603,12 +619,14 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
 
                 fdsSet[pos] = *i;
 
+				// 如果是边缘触发事件，清除之，因为边缘触发只需要通知一次
                 ed.checkEdge(i++); // NOTE: potentially deletes `i`
             }
             if (total)
                 return total;
         }
 
+		// 超时
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
@@ -939,12 +957,14 @@ int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut
     return 0;
 }
 
+// 清空所有订阅事件
 bool srt::CEPoll::empty(const CEPollDesc& d) const
 {
     ScopedLock lg (m_EPollLock);
     return d.watch_empty();
 }
 
+// 删除一个epoll实例
 int srt::CEPoll::release(const int eid)
 {
    ScopedLock pg(m_EPollLock);
@@ -965,7 +985,7 @@ int srt::CEPoll::release(const int eid)
    return 0;
 }
 
-
+// 更新指定SRTSOCKET的订阅事件，响应更新通知事件
 int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int events, const bool enable)
 {
     // As event flags no longer contain only event types, check now.
@@ -975,6 +995,7 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         return -1; // still, ignored.
     }
 
+	// 记录更新事件的个数
     int nupdated = 0;
     vector<int> lost;
 
@@ -983,6 +1004,8 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
     IF_HEAVY_LOGGING(PrintEpollEvent(debug, events));
 
     ScopedLock pg (m_EPollLock);
+
+	// 遍历所有的epoll实例
     for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
     {
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
@@ -998,6 +1021,8 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         CEPollDesc& ed = p->second;
 
         // Check if this EID is subscribed for this socket.
+
+		// 获取SRTSOCKET的订阅事件
         CEPollDesc::Wait* pwait = ed.watch_find(uid);
         if (!pwait)
         {
@@ -1011,17 +1036,22 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         // compute new states
 
         // New state to be set into the permanent state
+
+		// 计算新的订阅事件
         const int newstate = enable ? pwait->state | events // SET event bits if enable
                               : pwait->state & (~events); // CLEAR event bits
-
         // compute states changes!
         int changes = pwait->state ^ newstate; // oldState XOR newState
+
+		// 订阅事件没有变化
         if (!changes)
         {
             HLOGC(eilog.Debug, log << debug.str() << ": E" << (*i)
                     << tracking << " NOT updated: no changes");
             continue; // no changes!
         }
+
+		// 订阅事件有变化，更新之
         // assign new state
         pwait->state = newstate;
         // filter change relating what is watching
@@ -1038,6 +1068,8 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         // the given events, that is:
         // - if enable, it will set event flags, possibly in a new notice object
         // - if !enable, it will clear event flags, possibly remove notice if resulted in 0
+
+		// 相应的，需要更新通知事件
         ed.updateEventNotice(*pwait, uid, events, enable);
         ++nupdated;
 

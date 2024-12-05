@@ -736,7 +736,7 @@ enum SRT_EPOLL_FLAGS
     /// function with infinite time. This means an infinite hangup, although
     /// a socket can be added to this EID from a separate thread.
 
-	// 允许空容器等待
+	// 允许空容器等待; 即没有订阅事件时，允许epoll_wait等待; 可分析srt::CEPoll::uwait的实现
     SRT_EPOLL_ENABLE_EMPTY = 1,
 
     /// This makes the waiting function check if there is output container
@@ -744,7 +744,7 @@ enum SRT_EPOLL_FLAGS
     /// that the output container is 0 size or NULL and therefore the readiness
     /// state is reported only as a number of ready sockets from return value.
 
-	// 强制检查输出容器，确保一定有容器来接受事件通知
+	// epoll_wait时，必须检查通知事件缓存buffer,当没有设置buffer时，抛出异常; 可分析srt::CEPoll::uwait的实现
     SRT_EPOLL_ENABLE_OUTPUTCHECK = 2
 };
 
