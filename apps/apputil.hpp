@@ -205,6 +205,7 @@ struct OutBool
 
 struct OptionName;
 
+// 命令含参数
 struct OptionScheme
 {
     const OptionName* pid;

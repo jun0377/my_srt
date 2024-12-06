@@ -250,25 +250,34 @@ protected:
 
 };
 
+// 用于处理媒体传输，传输引擎
 class Engine
 {
+	// 源和目的
     Medium* media[2];
+	// 资源回收线程
     std::thread thr;
     class Tunnel* parent_tunnel;
     std::string nameid;
 
     int status = 0;
+
+	// 媒体数据读取状态
     Medium::ReadStatus rdst = Medium::RD_ERROR;
     UDT::ERRORINFO srtx;
 
 public:
+	
+	// 媒体传输方向
     enum Dir { DIR_IN, DIR_OUT };
 
+	// 获取状态
     int stat() { return status; }
 
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
         :
 #ifdef HAVE_FULL_CXX11
+		// C++11的列表初始化语法初始化数组
         media {m1, m2},
 #endif
         parent_tunnel(p), nameid(nid)
@@ -283,10 +292,13 @@ public:
 #endif
     }
 
+	// 创建工作线程
     void Start()
     {
-        Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
-        const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
+		Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
+
+		// 设置线程名称
+		const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
         srt::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
@@ -329,14 +341,18 @@ struct Tunnelbox;
 
 class Tunnel
 {
+	// 管理所有的网络隧道: 创建隧道/关闭隧道/资源回收
     Tunnelbox* parent_box;
+	// 源和目的
     std::unique_ptr<Medium> med_acp, med_clr;
+	// 双向传输: 源 < - > 目的
     Engine acp_to_clr, clr_to_acp;
     srt::sync::atomic<bool> running{true};
     std::mutex access;
 
 public:
 
+	// 输出一下源和目的的URI
     string show()
     {
         return med_acp->uri() + " <-> " + med_clr->uri();
@@ -350,15 +366,20 @@ public:
     {
     }
 
+	// 启动双向传输
     void Start()
     {
+    	// 源 -> 目的
         acp_to_clr.Start();
-        clr_to_acp.Start();
+		// 目的 -> 源
+		clr_to_acp.Start();
     }
 
     // This is to be called by an Engine from Engine::Worker
     // thread.
     // [[affinity = acp_to_clr.thr || clr_to_acp.thr]];
+
+	// 关闭传输
     void decommission_engine(Medium* which_medium)
     {
         // which_medium is the medium that failed.
@@ -399,25 +420,34 @@ public:
         }
     }
 
+	// 关闭传输
     void Stop();
 
+	// 当通道不可用时关闭，或强制退出通道
     bool decommission_if_dead(bool forced); // [[affinity = g_tunnels.thr]]
 };
 
+
+// 传输工作线程
 void Engine::Worker()
 {
     bytevector outbuf;
 
+	// 初始化为输入媒介
     Medium* which_medium = media[DIR_IN];
 
     for (;;)
     {
         try
-        {
+        {	
+        	// 输入媒介
             which_medium = media[DIR_IN];
+			// 从输入媒介中读数据
             rdst = media[DIR_IN]->Read((outbuf));
             switch (rdst)
             {
+
+			// 从数据媒介中读数据，转发到输出媒介
             case Medium::RD_DATA:
                 {
                     which_medium = media[DIR_OUT];
@@ -426,25 +456,31 @@ void Engine::Worker()
                 }
                 break;
 
+			// 输入媒介关闭
             case Medium::RD_EOF:
                 status = -1;
                 throw Medium::ReadEOF("");
 
+			// 输入媒介暂时不可用，请尝试再次读取
             case Medium::RD_AGAIN:
                 // Theoreticall RD_AGAIN should not be reported
                 // because it should be taken care of internally by
                 // repeated sending - unless we get m_broken set.
                 // If it is, however, it should be handled just like error.
+
+			// 输入媒介读取失败
             case Medium::RD_ERROR:
                 status = -1;
                 Medium::Error("Error while reading");
             }
         }
+		// 输入媒介关闭
         catch (Medium::ReadEOF&)
         {
             Verb() << "EOF. Exiting engine.";
             break;
         }
+		// 传输出错
         catch (Medium::TransmissionError& er)
         {
             Verb() << er.what() << " - interrupting engine: " << nameid;
@@ -459,6 +495,8 @@ void Engine::Worker()
     // know that one of them got down. It will then check
     // if both are down here and decommission the whole
     // tunnel if so.
+
+	// 如何输入和输出都被关闭了, 则关闭整个隧道
     parent_tunnel->decommission_engine(which_medium);
 }
 
@@ -1014,20 +1052,27 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
     return out;
 }
 
+// 管理所有的网络隧道: 创建隧道/关闭隧道/资源回收
 struct Tunnelbox
 {
+	// 存储隧道对象的列表
     list<unique_ptr<Tunnel>> tunnels;
     std::mutex access;
+	// 条件变量，用于通知清理操作
     condition_variable decom_ready;
+	// 标记主程序是否在运行
     bool main_running = true;
+	// 清理线程
     thread thr;
 
+	// 关闭隧道的信号
     void signal_decommission()
     {
         lock_guard<std::mutex> lk(access);
         decom_ready.notify_one();
     }
 
+	// 创建一个隧道
     void install(std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
         lock_guard<std::mutex> lk(access);
@@ -1037,14 +1082,17 @@ struct Tunnelbox
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
+		// 
         it->Start();
     }
 
+	// 创建资源回收线程
     void start_cleaner()
     {
         thr = thread( [this]() { CleanupWorker(); } );
     }
 
+	// 停止资源回收线程
     void stop_cleaner()
     {
         if (thr.joinable())
@@ -1053,6 +1101,7 @@ struct Tunnelbox
 
 private:
 
+	// 资源回收线程
     void CleanupWorker()
     {
         unique_lock<std::mutex> lk(access);
@@ -1083,6 +1132,7 @@ private:
     }
 };
 
+// 关闭传输
 void Tunnel::Stop()
 {
     // Check for running must be done without locking
@@ -1098,6 +1148,7 @@ void Tunnel::Stop()
     parent_box->signal_decommission();
 }
 
+// 如果隧道不可用或需要强制退出时，关闭之
 bool Tunnel::decommission_if_dead(bool forced)
 {
     lock_guard<std::mutex> lk(access);
@@ -1134,29 +1185,37 @@ int OnINT_StopService(int)
     return 0;
 }
 
+// ./srt-tunnel <listen-uri> <call-uri>
 int main( int argc, char** argv )
 {
+	// windows下需要初始化网络模块
     if (!SysInitializeNetwork())
     {
         cerr << "Fail to initialize network module.";
         return 1;
     }
 
+	// 一次读取的数据量，默认=4096字节
     size_t chunk = default_chunk;
 
+	// 命令行选项
     OptionName
-        o_loglevel = { "ll", "loglevel" },
-        o_logfa = { "lf", "logfa" },
-        o_chunk = {"c", "chunk" },
-        o_verbose = {"v", "verbose" },
-        o_noflush = {"s", "skipflush" };
+        o_loglevel = { "ll", "loglevel" },		// 日志记录级别，默认：错误
+        o_logfa = { "lf", "logfa" },			// 启用日志记录的功能区域
+        o_chunk = {"c", "chunk" },				// 一次读取的数据量，默认=4096字节
+        o_verbose = {"v", "verbose" },			// 显示详细信息
+        o_noflush = {"s", "skipflush" };		// 退出而不等待剩余数据传输完成
 
     // Options that expect no arguments (ARG_NONE) need not be mentioned.
+
+	// 命令行参数
     vector<OptionScheme> optargs = {
         { o_loglevel, OptionScheme::ARG_ONE },
         { o_logfa, OptionScheme::ARG_ONE },
         { o_chunk, OptionScheme::ARG_ONE }
     };
+
+	// 解析命令行参数，保存到map params中
     options_t params = ProcessOptions(argv, argc, optargs);
 
     /*
@@ -1169,6 +1228,7 @@ int main( int argc, char** argv )
        }
      */
 
+	// 两个不带选项的参数保存在空键中, <listen-uri> <call-uri>
     vector<string> args = params[""];
     if ( args.size() < 2 )
     {
@@ -1176,6 +1236,7 @@ int main( int argc, char** argv )
         return 1;
     }
 
+	// 日志系统初始化
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
@@ -1196,6 +1257,7 @@ int main( int argc, char** argv )
             srt::addlogfa(SRT_LOGFA_APP);
     }
 
+	// 是否输出详细日志
     string verbo = Option<OutString>(params, "no", o_verbose);
     if ( verbo == "" || !false_names.count(verbo) )
     {
@@ -1203,6 +1265,7 @@ int main( int argc, char** argv )
         Verbose::cverb = &std::cout;
     }
 
+	// 一次读取的数据量
     string chunks = Option<OutString>(params, "", o_chunk);
     if ( chunks!= "" )
     {
@@ -1212,10 +1275,13 @@ int main( int argc, char** argv )
     string listen_node = args[0];
     string call_node = args[1];
 
+	// uri地址
     UriParser ul(listen_node), uc(call_node);
 
     // It is allowed to use both media of the same type,
     // but only srt and tcp are allowed.
+
+	// 只支持srt和tcp
 
     set<string> allowed = {"srt", "tcp"};
     if (!allowed.count(ul.scheme())|| !allowed.count(uc.scheme()))
@@ -1226,8 +1292,10 @@ int main( int argc, char** argv )
 
     Verb() << "LISTEN type=" << ul.scheme() << ", CALL type=" << uc.scheme();
 
+	// 启动资源回收线程
     g_tunnels.start_cleaner();
 
+	// 创建一个输入媒介，即源URI
     main_listener = Medium::Create(listen_node, chunk, Medium::LISTENER);
 
     // The main program loop is only to catch
@@ -1238,6 +1306,7 @@ int main( int argc, char** argv )
     {
         try
         {
+        	// 接受连接
             Verb() << "Waiting for connection...";
             std::unique_ptr<Medium> accepted = main_listener->Accept();
             if (!g_tunnels.main_running)
